@@ -30,6 +30,7 @@ import {
 } from "@/connectors/status";
 import type { NormalizedIngestionResult } from "@/ingestion/types";
 import { createRetrievalQualitySummary } from "@/quality/retrieval";
+import { createSourceQualitySummary } from "@/quality/source";
 import type { LocalSearchResponse } from "@/search/types";
 import { createWorkflowStatusRunRequest } from "@/workflows/default-template";
 import type { WorkflowRunPlan } from "@/workflows/run";
@@ -238,6 +239,14 @@ export function KnowledgeOSConsole() {
         answer: answerResponse
       }),
     [answerResponse, searchResponse]
+  );
+  const sourceQuality = useMemo(
+    () =>
+      createSourceQualitySummary({
+        ingestions,
+        connectorStatuses
+      }),
+    [connectorStatuses, ingestions]
   );
 
   useEffect(() => {
@@ -1447,6 +1456,58 @@ export function KnowledgeOSConsole() {
             )}
           </section>
 
+          <section className="source-quality-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Sources</span>
+                <h2>Source quality</h2>
+              </div>
+              <span className={`verification-badge status-${sourceQuality.status}`}>
+                {formatStatus(sourceQuality.status)}
+              </span>
+            </div>
+
+            <div className="quality-metric-grid">
+              <div className="quality-metric">
+                <span>Sources</span>
+                <strong>{sourceQuality.sourceCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Chunks</span>
+                <strong>{sourceQuality.chunkCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Citation coverage</span>
+                <strong>{formatPercent(sourceQuality.citationCoverage)}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Blocked</span>
+                <strong>{sourceQuality.blockedConnectorCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Block rate</span>
+                <strong>{formatPercent(sourceQuality.connectorBlockRate)}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Persisted</span>
+                <strong>{sourceQuality.persistedConnectorCount}</strong>
+              </div>
+            </div>
+
+            {sourceQuality.sourceCount > 0 ||
+            sourceQuality.connectorEventCount > 0 ? (
+              <div className="quality-footnote">
+                <span>{sourceQuality.citationCount} citations</span>
+                <span>
+                  {sourceQuality.requestScopedConnectorCount} request scoped
+                </span>
+                <span>{sourceQuality.connectorEventCount} connector events</span>
+              </div>
+            ) : (
+              <div className="empty-state">No source quality signals</div>
+            )}
+          </section>
+
           <section className="workflow-panel">
             <div className="panel-header">
               <div>
@@ -1664,6 +1725,10 @@ export function KnowledgeOSConsole() {
                 <div className="task-row done">
                   <CheckCircle2 size={16} />
                   <span>T-031 retrieval quality dashboard</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-032 source quality indicators</span>
                 </div>
               </div>
             </div>

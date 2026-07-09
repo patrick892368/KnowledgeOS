@@ -209,6 +209,7 @@ a {
 .violation-panel,
 .answer-panel,
 .retrieval-quality-panel,
+.source-quality-panel,
 .workflow-panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -694,7 +695,8 @@ button {
 
 .verification-badge.status-partially_supported,
 .verification-badge.status-insufficient_context,
-.verification-badge.status-no_data {
+.verification-badge.status-no_data,
+.verification-badge.status-needs_attention {
   background: #fff7e6;
   color: var(--warning);
 }
@@ -705,7 +707,8 @@ button {
   color: var(--danger);
 }
 
-.retrieval-quality-panel {
+.retrieval-quality-panel,
+.source-quality-panel {
   align-content: start;
 }
 
@@ -979,7 +982,8 @@ button {
 
   .verification-badge.status-partially_supported,
   .verification-badge.status-insufficient_context,
-  .verification-badge.status-no_data {
+  .verification-badge.status-no_data,
+  .verification-badge.status-needs_attention {
     background: #3b2d12;
   }
 
