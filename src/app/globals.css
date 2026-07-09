@@ -210,6 +210,7 @@ a {
 .answer-panel,
 .retrieval-quality-panel,
 .source-quality-panel,
+.source-freshness-panel,
 .workflow-panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -683,7 +684,8 @@ button {
   font-weight: 800;
 }
 
-.verification-badge.status-supported {
+.verification-badge.status-supported,
+.verification-badge.status-fresh {
   background: #e7f8ee;
   color: var(--success);
 }
@@ -696,6 +698,7 @@ button {
 .verification-badge.status-partially_supported,
 .verification-badge.status-insufficient_context,
 .verification-badge.status-no_data,
+.verification-badge.status-stale,
 .verification-badge.status-needs_attention {
   background: #fff7e6;
   color: var(--warning);
@@ -708,7 +711,8 @@ button {
 }
 
 .retrieval-quality-panel,
-.source-quality-panel {
+.source-quality-panel,
+.source-freshness-panel {
   align-content: start;
 }
 
@@ -972,17 +976,19 @@ button {
     border-color: #633333;
   }
 
-  .verification-badge.status-supported {
+  .verification-badge.status-supported,
+  .verification-badge.status-fresh {
     background: #173b27;
   }
 
-.verification-badge.status-healthy {
+  .verification-badge.status-healthy {
     background: #173b27;
   }
 
   .verification-badge.status-partially_supported,
   .verification-badge.status-insufficient_context,
   .verification-badge.status-no_data,
+  .verification-badge.status-stale,
   .verification-badge.status-needs_attention {
     background: #3b2d12;
   }

@@ -29,6 +29,7 @@ import {
   type ConnectorSyncMode
 } from "@/connectors/status";
 import type { NormalizedIngestionResult } from "@/ingestion/types";
+import { createSourceFreshnessSummary } from "@/quality/freshness";
 import { createRetrievalQualitySummary } from "@/quality/retrieval";
 import { createSourceQualitySummary } from "@/quality/source";
 import type { LocalSearchResponse } from "@/search/types";
@@ -243,6 +244,14 @@ export function KnowledgeOSConsole() {
   const sourceQuality = useMemo(
     () =>
       createSourceQualitySummary({
+        ingestions,
+        connectorStatuses
+      }),
+    [connectorStatuses, ingestions]
+  );
+  const sourceFreshness = useMemo(
+    () =>
+      createSourceFreshnessSummary({
         ingestions,
         connectorStatuses
       }),
@@ -1508,6 +1517,60 @@ export function KnowledgeOSConsole() {
             )}
           </section>
 
+          <section className="source-freshness-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Sources</span>
+                <h2>Source freshness</h2>
+              </div>
+              <span className={`verification-badge status-${sourceFreshness.status}`}>
+                {formatStatus(sourceFreshness.status)}
+              </span>
+            </div>
+
+            <div className="quality-metric-grid">
+              <div className="quality-metric">
+                <span>Latest</span>
+                <strong>
+                  {sourceFreshness.latestActivityAt
+                    ? formatActivityTime(sourceFreshness.latestActivityAt)
+                    : "None"}
+                </strong>
+              </div>
+              <div className="quality-metric">
+                <span>Tracked</span>
+                <strong>{sourceFreshness.trackedSourceCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Fresh</span>
+                <strong>{sourceFreshness.freshSourceCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Stale</span>
+                <strong>{sourceFreshness.staleSourceCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Stale rate</span>
+                <strong>{formatPercent(sourceFreshness.staleRate)}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Blocked</span>
+                <strong>{sourceFreshness.blockedConnectorCount}</strong>
+              </div>
+            </div>
+
+            {sourceFreshness.sourceCount > 0 ||
+            sourceFreshness.connectorEventCount > 0 ? (
+              <div className="quality-footnote">
+                <span>{sourceFreshness.staleThresholdDays} day threshold</span>
+                <span>{sourceFreshness.unknownSourceCount} unknown timestamps</span>
+                <span>{sourceFreshness.connectorEventCount} connector events</span>
+              </div>
+            ) : (
+              <div className="empty-state">No source freshness signals</div>
+            )}
+          </section>
+
           <section className="workflow-panel">
             <div className="panel-header">
               <div>
@@ -1729,6 +1792,10 @@ export function KnowledgeOSConsole() {
                 <div className="task-row done">
                   <CheckCircle2 size={16} />
                   <span>T-032 source quality indicators</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-033 source freshness tracking</span>
                 </div>
               </div>
             </div>
