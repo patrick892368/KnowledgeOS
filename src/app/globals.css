@@ -211,6 +211,7 @@ a {
 .retrieval-quality-panel,
 .source-quality-panel,
 .source-freshness-panel,
+.connector-reliability-panel,
 .workflow-panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -699,6 +700,7 @@ button {
 .verification-badge.status-insufficient_context,
 .verification-badge.status-no_data,
 .verification-badge.status-stale,
+.verification-badge.status-degraded,
 .verification-badge.status-needs_attention {
   background: #fff7e6;
   color: var(--warning);
@@ -712,7 +714,8 @@ button {
 
 .retrieval-quality-panel,
 .source-quality-panel,
-.source-freshness-panel {
+.source-freshness-panel,
+.connector-reliability-panel {
   align-content: start;
 }
 
@@ -989,6 +992,7 @@ button {
   .verification-badge.status-insufficient_context,
   .verification-badge.status-no_data,
   .verification-badge.status-stale,
+  .verification-badge.status-degraded,
   .verification-badge.status-needs_attention {
     background: #3b2d12;
   }

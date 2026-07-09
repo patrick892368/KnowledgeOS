@@ -29,6 +29,7 @@ import {
   type ConnectorSyncMode
 } from "@/connectors/status";
 import type { NormalizedIngestionResult } from "@/ingestion/types";
+import { createConnectorReliabilitySummary } from "@/quality/connector-reliability";
 import { createSourceFreshnessSummary } from "@/quality/freshness";
 import { createRetrievalQualitySummary } from "@/quality/retrieval";
 import { createSourceQualitySummary } from "@/quality/source";
@@ -256,6 +257,13 @@ export function KnowledgeOSConsole() {
         connectorStatuses
       }),
     [connectorStatuses, ingestions]
+  );
+  const connectorReliability = useMemo(
+    () =>
+      createConnectorReliabilitySummary({
+        connectorStatuses
+      }),
+    [connectorStatuses]
   );
 
   useEffect(() => {
@@ -1571,6 +1579,67 @@ export function KnowledgeOSConsole() {
             )}
           </section>
 
+          <section className="connector-reliability-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Connectors</span>
+                <h2>Reliability trend</h2>
+              </div>
+              <span
+                className={`verification-badge status-${connectorReliability.status}`}
+              >
+                {formatStatus(connectorReliability.status)}
+              </span>
+            </div>
+
+            <div className="quality-metric-grid">
+              <div className="quality-metric">
+                <span>Reliability</span>
+                <strong>
+                  {formatPercent(connectorReliability.reliabilityRate)}
+                </strong>
+              </div>
+              <div className="quality-metric">
+                <span>Successful</span>
+                <strong>{connectorReliability.successfulConnectorCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Blocked</span>
+                <strong>{connectorReliability.blockedConnectorCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Block rate</span>
+                <strong>{formatPercent(connectorReliability.blockRate)}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Persisted</span>
+                <strong>{connectorReliability.persistedConnectorCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Latest</span>
+                <strong>
+                  {connectorReliability.latestActivityAt
+                    ? formatActivityTime(connectorReliability.latestActivityAt)
+                    : "None"}
+                </strong>
+              </div>
+            </div>
+
+            {connectorReliability.connectorEventCount > 0 ? (
+              <div className="quality-footnote">
+                <span>{connectorReliability.connectorEventCount} events</span>
+                <span>
+                  {connectorReliability.requestScopedConnectorCount} request scoped
+                </span>
+                <span>
+                  {formatPercent(connectorReliability.persistedRate)} persisted
+                </span>
+              </div>
+            ) : (
+              <div className="empty-state">No connector reliability signals</div>
+            )}
+          </section>
+
           <section className="workflow-panel">
             <div className="panel-header">
               <div>
@@ -1796,6 +1865,10 @@ export function KnowledgeOSConsole() {
                 <div className="task-row done">
                   <CheckCircle2 size={16} />
                   <span>T-033 source freshness tracking</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-034 connector reliability trend</span>
                 </div>
               </div>
             </div>
