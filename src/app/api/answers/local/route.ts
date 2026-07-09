@@ -1,0 +1,29 @@
+import { authErrorResponse, requireSession } from "@/auth/session";
+import { generateLocalAnswer } from "@/answers/local-answer";
+import { SearchError, searchErrorResponse } from "@/search/errors";
+import { parseLocalSearchPayload } from "@/search/local-search";
+
+export async function POST(request: Request) {
+  try {
+    const session = await requireSession();
+    let payload: unknown;
+
+    try {
+      payload = await request.json();
+    } catch {
+      throw new SearchError("invalid_payload", "Request body must be valid JSON.");
+    }
+
+    const input = parseLocalSearchPayload(payload, session.organizationId);
+
+    return Response.json({
+      answer: generateLocalAnswer(input)
+    });
+  } catch (error) {
+    if (error instanceof SearchError) {
+      return searchErrorResponse(error);
+    }
+
+    return authErrorResponse(error);
+  }
+}
