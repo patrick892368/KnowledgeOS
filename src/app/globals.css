@@ -206,6 +206,7 @@ a {
 .identity-panel,
 .membership-panel,
 .audit-panel,
+.violation-panel,
 .answer-panel,
 .workflow-panel {
   background: var(--surface);
@@ -375,7 +376,8 @@ button {
 }
 
 .membership-toolbar,
-.audit-toolbar {
+.audit-toolbar,
+.violation-toolbar {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
@@ -425,16 +427,19 @@ button {
   overflow-wrap: anywhere;
 }
 
-.audit-panel {
+.audit-panel,
+.violation-panel {
   align-content: start;
 }
 
-.audit-list {
+.audit-list,
+.violation-list {
   display: grid;
   gap: 10px;
 }
 
-.audit-row {
+.audit-row,
+.violation-row {
   border: 1px solid var(--border);
   border-radius: 8px;
   display: grid;
@@ -443,7 +448,8 @@ button {
   padding: 12px;
 }
 
-.audit-row-main {
+.audit-row-main,
+.violation-row-main {
   align-items: center;
   display: flex;
   gap: 10px;
@@ -451,28 +457,35 @@ button {
 }
 
 .audit-row-main div,
-.audit-row-meta {
+.audit-row-meta,
+.violation-row-main div,
+.violation-row-meta {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
 .audit-row-main span,
-.audit-row-meta span {
+.audit-row-meta span,
+.violation-row-main span,
+.violation-row-meta span {
   font-size: 14px;
   font-weight: 800;
   overflow-wrap: anywhere;
 }
 
 .audit-row-main small,
-.audit-row-meta small {
+.audit-row-meta small,
+.violation-row-main small,
+.violation-row-meta small {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 
-.audit-row code {
+.audit-row code,
+.violation-row code {
   background: var(--surface-muted);
   border-radius: 6px;
   color: var(--text-muted);
@@ -483,6 +496,29 @@ button {
   line-height: 1.45;
   overflow-wrap: anywhere;
   padding: 9px 10px;
+}
+
+.violation-row strong {
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 5px 8px;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.violation-row.severity-low strong {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+}
+
+.violation-row.severity-medium strong {
+  background: #fff7e6;
+  color: var(--warning);
+}
+
+.violation-row.severity-high strong {
+  background: #fff1f0;
+  color: var(--danger);
 }
 
 .answer-panel {
@@ -892,6 +928,14 @@ button {
   .verification-badge.status-unsupported {
     background: #3d1f1f;
   }
+
+  .violation-row.severity-medium strong {
+    background: #3b2d12;
+  }
+
+  .violation-row.severity-high strong {
+    background: #3d1f1f;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -950,7 +994,9 @@ button {
   }
 
   .audit-toolbar,
+  .violation-toolbar,
   .audit-row,
+  .violation-row,
   .membership-row {
     align-items: stretch;
     grid-template-columns: 1fr;

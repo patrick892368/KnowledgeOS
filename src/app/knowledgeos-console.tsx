@@ -86,6 +86,22 @@ type ManagedAuditEvent = {
   createdAt: string;
 };
 
+type PermissionViolationSignal = {
+  id: string;
+  organizationId: string;
+  auditEventId: string;
+  actorUserId: string | null;
+  actorEmail: string | null;
+  actorName: string | null;
+  violationType: string;
+  severity: "low" | "medium" | "high";
+  sourceAction: string;
+  resourceType: string;
+  resourceId: string;
+  metadata: Record<string, unknown>;
+  occurredAt: string;
+};
+
 const membershipRoles: MembershipRole[] = ["owner", "admin", "editor", "viewer"];
 
 const developmentHeaders = {
@@ -174,6 +190,9 @@ export function KnowledgeOSConsole() {
     useState<WorkflowRunPlan | null>(null);
   const [memberships, setMemberships] = useState<ManagedMembership[]>([]);
   const [auditEvents, setAuditEvents] = useState<ManagedAuditEvent[]>([]);
+  const [permissionViolations, setPermissionViolations] = useState<
+    PermissionViolationSignal[]
+  >([]);
   const [memberRoleEdits, setMemberRoleEdits] = useState<
     Record<string, MembershipRole>
   >({});
@@ -188,6 +207,7 @@ export function KnowledgeOSConsole() {
     | "members"
     | "member-role"
     | "audit-events"
+    | "permission-violations"
     | "workflow"
     | null
   >(null);
@@ -212,6 +232,7 @@ export function KnowledgeOSConsole() {
 
   useEffect(() => {
     setAuditEvents([]);
+    setPermissionViolations([]);
 
     if (!session || !isMembershipManager(session.role)) {
       setMemberships([]);
@@ -372,6 +393,42 @@ export function KnowledgeOSConsole() {
           caughtError instanceof Error
             ? caughtError.message
             : "Audit events failed to load."
+        );
+      }
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function loadPermissionViolations(options: { quiet: boolean }) {
+    if (!canManageCurrentMemberships) {
+      setPermissionViolations([]);
+
+      if (!options.quiet) {
+        setError("Owner or admin signed session is required.");
+      }
+
+      return;
+    }
+
+    setBusyAction("permission-violations");
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/permission-violations", {
+        credentials: "same-origin"
+      });
+      const payload = await readApiResponse<{
+        permissionViolations: PermissionViolationSignal[];
+      }>(response);
+
+      setPermissionViolations(payload.permissionViolations);
+    } catch (caughtError) {
+      if (!options.quiet) {
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Permission violations failed to load."
         );
       }
     } finally {
@@ -1010,6 +1067,73 @@ export function KnowledgeOSConsole() {
             </div>
           </section>
 
+          <section className="violation-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Risk</span>
+                <h2>Permission violations</h2>
+              </div>
+              <span className="count-pill">
+                {permissionViolations.length} signals
+              </span>
+            </div>
+
+            <div className="violation-toolbar">
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => loadPermissionViolations({ quiet: false })}
+                disabled={busyAction !== null || !canManageCurrentMemberships}
+              >
+                <ShieldCheck size={16} />
+                <span>
+                  {busyAction === "permission-violations"
+                    ? "Loading"
+                    : "Refresh"}
+                </span>
+              </button>
+              <span className="status-pill">
+                <ShieldCheck size={14} />
+                {canManageCurrentMemberships
+                  ? "Owner/admin risk"
+                  : "Manager session required"}
+              </span>
+            </div>
+
+            <div className="violation-list">
+              {permissionViolations.map((violation) => (
+                <article
+                  className={`violation-row severity-${violation.severity}`}
+                  key={violation.id}
+                >
+                  <div className="violation-row-main">
+                    <ShieldCheck size={16} />
+                    <div>
+                      <span>{formatStatus(violation.violationType)}</span>
+                      <small>
+                        {formatStatus(violation.resourceType)} |{" "}
+                        {violation.resourceId}
+                      </small>
+                    </div>
+                  </div>
+                  <div className="violation-row-meta">
+                    <strong>{violation.severity}</strong>
+                    <span>
+                      {violation.actorEmail ??
+                        violation.actorUserId ??
+                        "System actor"}
+                    </span>
+                    <small>{formatActivityTime(violation.occurredAt)}</small>
+                  </div>
+                  <code>{formatAuditMetadata(violation.metadata)}</code>
+                </article>
+              ))}
+              {permissionViolations.length === 0 ? (
+                <div className="empty-state">No permission violations loaded</div>
+              ) : null}
+            </div>
+          </section>
+
           <section className="workspace-grid">
             <div className="tool-panel">
               <div className="panel-header">
@@ -1465,9 +1589,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-029 audit event viewer</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-030 permission violation dashboard</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-030 permission violation dashboard</span>
+                  <span>T-031 retrieval quality dashboard</span>
                 </div>
               </div>
             </div>
