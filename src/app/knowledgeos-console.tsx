@@ -73,6 +73,19 @@ type ManagedMembership = {
   updatedAt: string;
 };
 
+type ManagedAuditEvent = {
+  id: string;
+  organizationId: string;
+  actorUserId: string | null;
+  actorEmail: string | null;
+  actorName: string | null;
+  action: string;
+  resourceType: string;
+  resourceId: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
 const membershipRoles: MembershipRole[] = ["owner", "admin", "editor", "viewer"];
 
 const developmentHeaders = {
@@ -126,6 +139,14 @@ function formatActivityTime(value: string): string {
   }).format(new Date(value));
 }
 
+function formatAuditMetadata(metadata: Record<string, unknown>): string {
+  if (Object.keys(metadata).length === 0) {
+    return "No metadata";
+  }
+
+  return JSON.stringify(metadata);
+}
+
 export function KnowledgeOSConsole() {
   const [searchMode, setSearchMode] = useState<SearchMode>("request-scoped");
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -152,6 +173,7 @@ export function KnowledgeOSConsole() {
   const [workflowRunPlan, setWorkflowRunPlan] =
     useState<WorkflowRunPlan | null>(null);
   const [memberships, setMemberships] = useState<ManagedMembership[]>([]);
+  const [auditEvents, setAuditEvents] = useState<ManagedAuditEvent[]>([]);
   const [memberRoleEdits, setMemberRoleEdits] = useState<
     Record<string, MembershipRole>
   >({});
@@ -165,6 +187,7 @@ export function KnowledgeOSConsole() {
     | "login"
     | "members"
     | "member-role"
+    | "audit-events"
     | "workflow"
     | null
   >(null);
@@ -188,6 +211,8 @@ export function KnowledgeOSConsole() {
   }, []);
 
   useEffect(() => {
+    setAuditEvents([]);
+
     if (!session || !isMembershipManager(session.role)) {
       setMemberships([]);
       setMemberRoleEdits({});
@@ -311,6 +336,42 @@ export function KnowledgeOSConsole() {
           caughtError instanceof Error
             ? caughtError.message
             : "Memberships failed to load."
+        );
+      }
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function loadAuditEvents(options: { quiet: boolean }) {
+    if (!canManageCurrentMemberships) {
+      setAuditEvents([]);
+
+      if (!options.quiet) {
+        setError("Owner or admin signed session is required.");
+      }
+
+      return;
+    }
+
+    setBusyAction("audit-events");
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/audit-events", {
+        credentials: "same-origin"
+      });
+      const payload = await readApiResponse<{
+        auditEvents: ManagedAuditEvent[];
+      }>(response);
+
+      setAuditEvents(payload.auditEvents);
+    } catch (caughtError) {
+      if (!options.quiet) {
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Audit events failed to load."
         );
       }
     } finally {
@@ -891,6 +952,64 @@ export function KnowledgeOSConsole() {
             </div>
           </section>
 
+          <section className="audit-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Governance</span>
+                <h2>Audit events</h2>
+              </div>
+              <span className="count-pill">{auditEvents.length} events</span>
+            </div>
+
+            <div className="audit-toolbar">
+              <button
+                className="icon-button"
+                type="button"
+                onClick={() => loadAuditEvents({ quiet: false })}
+                disabled={busyAction !== null || !canManageCurrentMemberships}
+              >
+                <ShieldCheck size={16} />
+                <span>
+                  {busyAction === "audit-events" ? "Loading" : "Refresh"}
+                </span>
+              </button>
+              <span className="status-pill">
+                <ShieldCheck size={14} />
+                {canManageCurrentMemberships
+                  ? "Owner/admin audit"
+                  : "Manager session required"}
+              </span>
+            </div>
+
+            <div className="audit-list">
+              {auditEvents.map((event) => (
+                <article className="audit-row" key={event.id}>
+                  <div className="audit-row-main">
+                    <Activity size={16} />
+                    <div>
+                      <span>{event.action}</span>
+                      <small>
+                        {formatStatus(event.resourceType)} | {event.resourceId}
+                      </small>
+                    </div>
+                  </div>
+                  <div className="audit-row-meta">
+                    <span>
+                      {event.actorEmail ?? event.actorUserId ?? "System actor"}
+                    </span>
+                    <small>{formatActivityTime(event.createdAt)}</small>
+                  </div>
+                  <code>{formatAuditMetadata(event.metadata)}</code>
+                </article>
+              ))}
+              {auditEvents.length === 0 ? (
+                <div className="empty-state">
+                  Sign in as owner/admin and refresh audit events
+                </div>
+              ) : null}
+            </div>
+          </section>
+
           <section className="workspace-grid">
             <div className="tool-panel">
               <div className="panel-header">
@@ -1342,9 +1461,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-028 workflow status UI</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-029 audit event viewer</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-029 audit event viewer</span>
+                  <span>T-030 permission violation dashboard</span>
                 </div>
               </div>
             </div>

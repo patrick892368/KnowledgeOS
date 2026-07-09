@@ -205,6 +205,7 @@ a {
 .data-panel,
 .identity-panel,
 .membership-panel,
+.audit-panel,
 .answer-panel,
 .workflow-panel {
   background: var(--surface);
@@ -373,7 +374,8 @@ button {
   align-content: start;
 }
 
-.membership-toolbar {
+.membership-toolbar,
+.audit-toolbar {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
@@ -421,6 +423,66 @@ button {
   font-size: 12px;
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+.audit-panel {
+  align-content: start;
+}
+
+.audit-list {
+  display: grid;
+  gap: 10px;
+}
+
+.audit-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 12px;
+}
+
+.audit-row-main {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.audit-row-main div,
+.audit-row-meta {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.audit-row-main span,
+.audit-row-meta span {
+  font-size: 14px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.audit-row-main small,
+.audit-row-meta small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.audit-row code {
+  background: var(--surface-muted);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  grid-column: 1 / -1;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  padding: 9px 10px;
 }
 
 .answer-panel {
@@ -887,6 +949,8 @@ button {
     display: grid;
   }
 
+  .audit-toolbar,
+  .audit-row,
   .membership-row {
     align-items: stretch;
     grid-template-columns: 1fr;
