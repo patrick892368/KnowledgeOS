@@ -30,6 +30,8 @@ import {
 } from "@/connectors/status";
 import type { NormalizedIngestionResult } from "@/ingestion/types";
 import type { LocalSearchResponse } from "@/search/types";
+import { createWorkflowStatusRunRequest } from "@/workflows/default-template";
+import type { WorkflowRunPlan } from "@/workflows/run";
 
 type ApiError = {
   error: {
@@ -146,6 +148,9 @@ export function KnowledgeOSConsole() {
     useState<LocalSearchResponse | null>(null);
   const [answerResponse, setAnswerResponse] =
     useState<LocalAnswerResponse | null>(null);
+  const [workflowTaskId, setWorkflowTaskId] = useState("T-028");
+  const [workflowRunPlan, setWorkflowRunPlan] =
+    useState<WorkflowRunPlan | null>(null);
   const [memberships, setMemberships] = useState<ManagedMembership[]>([]);
   const [memberRoleEdits, setMemberRoleEdits] = useState<
     Record<string, MembershipRole>
@@ -160,6 +165,7 @@ export function KnowledgeOSConsole() {
     | "login"
     | "members"
     | "member-role"
+    | "workflow"
     | null
   >(null);
 
@@ -607,12 +613,43 @@ export function KnowledgeOSConsole() {
     }
   }
 
+  async function planWorkflowRun() {
+    setBusyAction("workflow");
+    setError(null);
+
+    try {
+      const response = await fetch("/api/workflows/runs", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: developmentHeaders,
+        body: JSON.stringify(
+          createWorkflowStatusRunRequest(workflowTaskId.trim())
+        )
+      });
+      const payload = await readApiResponse<{
+        run: WorkflowRunPlan;
+      }>(response);
+
+      setWorkflowRunPlan(payload.run);
+    } catch (caughtError) {
+      setWorkflowRunPlan(null);
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Workflow planning failed."
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   function resetWorkspace() {
     setIngestions([]);
     setConnectorStatuses([]);
     setLastPersistence(null);
     setSearchResponse(null);
     setAnswerResponse(null);
+    setWorkflowRunPlan(null);
     setError(null);
   }
 
@@ -1099,6 +1136,112 @@ export function KnowledgeOSConsole() {
             )}
           </section>
 
+          <section className="workflow-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Workflow</span>
+                <h2>Run status</h2>
+              </div>
+              <span className="count-pill">
+                {workflowRunPlan ? formatStatus(workflowRunPlan.status) : "Not planned"}
+              </span>
+            </div>
+
+            <div className="workflow-toolbar">
+              <label className="field">
+                <span>Task ID</span>
+                <input
+                  value={workflowTaskId}
+                  onChange={(event) => setWorkflowTaskId(event.target.value)}
+                />
+              </label>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={planWorkflowRun}
+                disabled={busyAction !== null}
+              >
+                <ClipboardList size={16} />
+                {busyAction === "workflow" ? "Planning" : "Plan run"}
+              </button>
+            </div>
+
+            <div className="workflow-status-strip">
+              <span className="status-pill">
+                <Activity size={14} />
+                {workflowRunPlan
+                  ? formatStatus(workflowRunPlan.executionMode)
+                  : "plan only"}
+              </span>
+              <span className="status-pill">
+                <ShieldCheck size={14} />
+                No worker execution
+              </span>
+              <span className="status-pill">
+                <CheckCircle2 size={14} />
+                {workflowRunPlan
+                  ? `${workflowRunPlan.reviewGates.length} gates`
+                  : "0 gates"}
+              </span>
+            </div>
+
+            {workflowRunPlan ? (
+              <div className="workflow-run-grid">
+                <div className="workflow-summary">
+                  <div>
+                    <span>Template</span>
+                    <strong>
+                      {workflowRunPlan.templateName} v
+                      {workflowRunPlan.templateVersion}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Created</span>
+                    <strong>{formatActivityTime(workflowRunPlan.createdAt)}</strong>
+                  </div>
+                  <div>
+                    <span>Outputs</span>
+                    <strong>{workflowRunPlan.outputKeys.length}</strong>
+                  </div>
+                  <div>
+                    <span>Run ID</span>
+                    <strong>{workflowRunPlan.id}</strong>
+                  </div>
+                </div>
+
+                <div className="workflow-gate-list" aria-label="Review gates">
+                  {workflowRunPlan.reviewGates.map((gate) => (
+                    <span className="workflow-gate" key={gate}>
+                      {formatStatus(gate)}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="workflow-step-list">
+                  {workflowRunPlan.steps.map((step, index) => (
+                    <article className="workflow-step-row" key={step.id}>
+                      <div className="workflow-step-index">{index + 1}</div>
+                      <div className="workflow-step-main">
+                        <span>{step.name}</span>
+                        <small>{step.description}</small>
+                        <div className="workflow-step-meta">
+                          <span>{step.inputKeys.length} inputs</span>
+                          <span>{step.outputKeys.length} outputs</span>
+                          <span>{step.reviewGates.length} gates</span>
+                        </div>
+                      </div>
+                      <span className="workflow-step-status">
+                        {formatStatus(step.status)}
+                      </span>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">No workflow run planned</div>
+            )}
+          </section>
+
           <section className="lower-grid">
             <div className="data-panel">
               <div className="panel-header">
@@ -1195,9 +1338,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-027 workflow run API</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-028 workflow status UI</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-028 workflow status UI</span>
+                  <span>T-029 audit event viewer</span>
                 </div>
               </div>
             </div>
