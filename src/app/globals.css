@@ -208,6 +208,7 @@ a {
 .audit-panel,
 .violation-panel,
 .answer-panel,
+.retrieval-quality-panel,
 .workflow-panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -686,15 +687,67 @@ button {
   color: var(--success);
 }
 
+.verification-badge.status-healthy {
+  background: #e7f8ee;
+  color: var(--success);
+}
+
 .verification-badge.status-partially_supported,
-.verification-badge.status-insufficient_context {
+.verification-badge.status-insufficient_context,
+.verification-badge.status-no_data {
   background: #fff7e6;
   color: var(--warning);
 }
 
-.verification-badge.status-unsupported {
+.verification-badge.status-unsupported,
+.verification-badge.status-needs_review {
   background: #fff1f0;
   color: var(--danger);
+}
+
+.retrieval-quality-panel {
+  align-content: start;
+}
+
+.quality-metric-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.quality-metric {
+  background: var(--surface-muted);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.quality-metric span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.quality-metric strong {
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
+.quality-footnote {
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 8px;
+}
+
+.quality-footnote span {
+  background: var(--surface-muted);
+  border-radius: 999px;
+  padding: 5px 9px;
 }
 
 .answer-output {
@@ -920,12 +973,18 @@ button {
     background: #173b27;
   }
 
+.verification-badge.status-healthy {
+    background: #173b27;
+  }
+
   .verification-badge.status-partially_supported,
-  .verification-badge.status-insufficient_context {
+  .verification-badge.status-insufficient_context,
+  .verification-badge.status-no_data {
     background: #3b2d12;
   }
 
-  .verification-badge.status-unsupported {
+  .verification-badge.status-unsupported,
+  .verification-badge.status-needs_review {
     background: #3d1f1f;
   }
 
@@ -939,6 +998,10 @@ button {
 }
 
 @media (max-width: 1100px) {
+  .quality-metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .workspace-grid,
   .lower-grid {
     grid-template-columns: 1fr;
@@ -1017,6 +1080,10 @@ button {
   }
 
   .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quality-metric-grid {
     grid-template-columns: 1fr;
   }
 }

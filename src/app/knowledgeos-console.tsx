@@ -29,6 +29,7 @@ import {
   type ConnectorSyncMode
 } from "@/connectors/status";
 import type { NormalizedIngestionResult } from "@/ingestion/types";
+import { createRetrievalQualitySummary } from "@/quality/retrieval";
 import type { LocalSearchResponse } from "@/search/types";
 import { createWorkflowStatusRunRequest } from "@/workflows/default-template";
 import type { WorkflowRunPlan } from "@/workflows/run";
@@ -140,6 +141,10 @@ function formatStatus(value: string) {
   return value.replace(/_/g, " ");
 }
 
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
 function isMembershipManager(role: MembershipRole): boolean {
   return role === "owner" || role === "admin";
 }
@@ -225,6 +230,15 @@ export function KnowledgeOSConsole() {
       citationCoverage: searchResponse?.metrics.citationCoverage ?? 0
     };
   }, [ingestions, searchResponse]);
+
+  const retrievalQuality = useMemo(
+    () =>
+      createRetrievalQualitySummary({
+        search: searchResponse,
+        answer: answerResponse
+      }),
+    [answerResponse, searchResponse]
+  );
 
   useEffect(() => {
     void loadCurrentSession({ quiet: true });
@@ -1379,6 +1393,60 @@ export function KnowledgeOSConsole() {
             )}
           </section>
 
+          <section className="retrieval-quality-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Quality</span>
+                <h2>Retrieval quality</h2>
+              </div>
+              <span className={`verification-badge status-${retrievalQuality.status}`}>
+                {formatStatus(retrievalQuality.status)}
+              </span>
+            </div>
+
+            <div className="quality-metric-grid">
+              <div className="quality-metric">
+                <span>Search coverage</span>
+                <strong>{formatPercent(retrievalQuality.searchCitationCoverage)}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Answer support</span>
+                <strong>{formatPercent(retrievalQuality.answerSupportRate)}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Unsupported</span>
+                <strong>
+                  {formatPercent(retrievalQuality.answerUnsupportedRate)}
+                </strong>
+              </div>
+              <div className="quality-metric">
+                <span>Evidence</span>
+                <strong>{retrievalQuality.evidenceCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Results</span>
+                <strong>{retrievalQuality.returnedResults}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Chunks</span>
+                <strong>{retrievalQuality.searchedChunks}</strong>
+              </div>
+            </div>
+
+            {retrievalQuality.hasSearchData || retrievalQuality.hasAnswerData ? (
+              <div className="quality-footnote">
+                <span>
+                  {retrievalQuality.searchedDocuments} documents checked
+                </span>
+                <span>
+                  {formatPercent(retrievalQuality.answerCitationCoverage)} answer coverage
+                </span>
+              </div>
+            ) : (
+              <div className="empty-state">No retrieval quality signals</div>
+            )}
+          </section>
+
           <section className="workflow-panel">
             <div className="panel-header">
               <div>
@@ -1593,8 +1661,8 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-030 permission violation dashboard</span>
                 </div>
-                <div className="task-row active">
-                  <Activity size={16} />
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
                   <span>T-031 retrieval quality dashboard</span>
                 </div>
               </div>
