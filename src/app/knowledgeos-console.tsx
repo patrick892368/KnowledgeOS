@@ -50,6 +50,7 @@ import type { LocalSearchResponse } from "@/search/types";
 import { createWorkflowStatusRunRequest } from "@/workflows/default-template";
 import { createWorkflowMetricsSummary } from "@/workflows/metrics";
 import type { WorkflowRunPlan } from "@/workflows/run";
+import { createAdminAnalyticsKpiTelemetryEvents } from "@/telemetry/admin-analytics";
 
 type ApiError = {
   error: {
@@ -246,6 +247,18 @@ function formatStatus(value: string) {
 
 function formatPercent(value: number) {
   return `${Math.round(value * 100)}%`;
+}
+
+function formatMetricValue(value: number, unit: string) {
+  if (unit === "ratio") {
+    return formatPercent(value);
+  }
+
+  if (unit === "score") {
+    return `${Math.round(value * 100)}`;
+  }
+
+  return Number.isInteger(value) ? value.toString() : value.toFixed(2);
 }
 
 function isMembershipManager(role: MembershipRole): boolean {
@@ -523,6 +536,17 @@ export function KnowledgeOSConsole() {
       snapshots: [previous, latest]
     });
   }, [adminAnalytics]);
+  const adminKpiTelemetryEvents = useMemo(
+    () =>
+      createAdminAnalyticsKpiTelemetryEvents({
+        summary: adminAnalytics,
+        organizationId:
+          session?.organizationId ??
+          developmentHeaders["x-knowledgeos-organization-id"],
+        capturedAt: "2026-07-10T02:30:00.000Z"
+      }),
+    [adminAnalytics, session?.organizationId]
+  );
 
   useEffect(() => {
     void loadCurrentSession({ quiet: true });
@@ -3065,6 +3089,89 @@ export function KnowledgeOSConsole() {
             </div>
           </section>
 
+          <section className="kpi-telemetry-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Telemetry</span>
+                <h2>KPI telemetry</h2>
+              </div>
+              <span className="verification-badge status-stable">Local only</span>
+            </div>
+
+            <div className="quality-metric-grid">
+              <div className="quality-metric">
+                <span>Events</span>
+                <strong>{adminKpiTelemetryEvents.length}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Categories</span>
+                <strong>
+                  {new Set(
+                    adminKpiTelemetryEvents.map((event) => event.category)
+                  ).size}
+                </strong>
+              </div>
+              <div className="quality-metric">
+                <span>Governance</span>
+                <strong>
+                  {
+                    adminKpiTelemetryEvents.filter(
+                      (event) => event.category === "governance"
+                    ).length
+                  }
+                </strong>
+              </div>
+              <div className="quality-metric">
+                <span>Source</span>
+                <strong>
+                  {formatStatus(adminKpiTelemetryEvents[0]?.source ?? "none")}
+                </strong>
+              </div>
+              <div className="quality-metric">
+                <span>Scope</span>
+                <strong>Local</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Captured</span>
+                <strong>
+                  {adminKpiTelemetryEvents[0]
+                    ? formatActivityTime(adminKpiTelemetryEvents[0].capturedAt)
+                    : "None"}
+                </strong>
+              </div>
+            </div>
+
+            <div className="release-readiness-strip">
+              <span className="status-pill">
+                <ShieldCheck size={14} />
+                Aggregate-safe events
+              </span>
+              <span className="status-pill">
+                <Database size={14} />
+                Non-persistent
+              </span>
+              <span className="status-pill">
+                <Activity size={14} />
+                External telemetry not claimed
+              </span>
+            </div>
+
+            <div className="release-check-list">
+              {adminKpiTelemetryEvents.map((event) => (
+                <article className="release-check-row" key={event.id}>
+                  <span>{event.metricName}</span>
+                  <strong>
+                    {formatMetricValue(event.value, event.unit)}{" "}
+                    {formatStatus(event.unit)}
+                  </strong>
+                  <small>
+                    {formatStatus(event.category)} | {formatStatus(event.source)}
+                  </small>
+                </article>
+              ))}
+            </div>
+          </section>
+
           <section className="lower-grid">
             <div className="data-panel">
               <div className="panel-header">
@@ -3277,9 +3384,21 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-056 admin analytics history</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-057 admin analytics history UI</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-058 KPI telemetry contract</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-059 KPI telemetry mapping</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-057 admin analytics history UI</span>
+                  <span>T-060 KPI telemetry UI</span>
                 </div>
               </div>
             </div>

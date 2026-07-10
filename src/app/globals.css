@@ -220,7 +220,8 @@ a {
 .release-history-panel,
 .operational-reliability-panel,
 .admin-analytics-panel,
-.admin-analytics-history-panel {
+.admin-analytics-history-panel,
+.kpi-telemetry-panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -694,7 +695,8 @@ button {
 .release-history-panel,
 .operational-reliability-panel,
 .admin-analytics-panel,
-.admin-analytics-history-panel {
+.admin-analytics-history-panel,
+.kpi-telemetry-panel {
   align-content: start;
 }
 
@@ -929,7 +931,8 @@ button {
 .release-history-panel,
 .operational-reliability-panel,
 .admin-analytics-panel,
-.admin-analytics-history-panel {
+.admin-analytics-history-panel,
+.kpi-telemetry-panel {
   align-content: start;
 }
 
