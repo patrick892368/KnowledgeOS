@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canManageKpiTelemetry,
   canRoleManagePermissionGrants,
   databaseTableNames,
   embeddingDimensions,
   invitationStatuses,
   isMembershipRole,
   isTerminalWorkflowRunStatus,
+  kpiTelemetryCategories,
+  kpiTelemetrySources,
+  kpiTelemetryUnits,
   membershipRoles,
   permissionActions,
   permissionResourceTypes,
@@ -28,7 +32,8 @@ describe("database model constants", () => {
       "citations",
       "workflows",
       "workflow_runs",
-      "audit_events"
+      "audit_events",
+      "kpi_telemetry_events"
     ]);
   });
 
@@ -52,6 +57,19 @@ describe("database model constants", () => {
       "owner",
       "admin"
     ]);
+  });
+
+  it("keeps owner and admin as KPI telemetry administrators", () => {
+    expect(membershipRoles.filter(canManageKpiTelemetry)).toEqual([
+      "owner",
+      "admin"
+    ]);
+  });
+
+  it("defines KPI telemetry taxonomy", () => {
+    expect(kpiTelemetryCategories).toContain("governance");
+    expect(kpiTelemetryUnits).toContain("ratio");
+    expect(kpiTelemetrySources).toContain("local_summary");
   });
 
   it("validates membership roles", () => {

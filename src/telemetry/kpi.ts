@@ -1,33 +1,20 @@
-export const kpiTelemetryCategories = [
-  "business",
-  "product",
-  "ai",
-  "governance",
-  "workflow",
-  "reliability"
-] as const;
+export {
+  kpiTelemetryCategories,
+  kpiTelemetrySources,
+  kpiTelemetryUnits,
+  type KpiTelemetryCategory,
+  type KpiTelemetrySource,
+  type KpiTelemetryUnit
+} from "@/db/model";
 
-export const kpiTelemetryUnits = [
-  "count",
-  "percent",
-  "ratio",
-  "milliseconds",
-  "seconds",
-  "minutes",
-  "score"
-] as const;
-
-export const kpiTelemetrySources = [
-  "local_summary",
-  "quality_summary",
-  "governance_summary",
-  "workflow_plan",
-  "manual_review"
-] as const;
-
-export type KpiTelemetryCategory = (typeof kpiTelemetryCategories)[number];
-export type KpiTelemetryUnit = (typeof kpiTelemetryUnits)[number];
-export type KpiTelemetrySource = (typeof kpiTelemetrySources)[number];
+import {
+  kpiTelemetryCategories,
+  kpiTelemetrySources,
+  kpiTelemetryUnits,
+  type KpiTelemetryCategory,
+  type KpiTelemetrySource,
+  type KpiTelemetryUnit
+} from "@/db/model";
 export type KpiTelemetryMetadataValue = string | number | boolean | null;
 
 export interface KpiTelemetryEventInput {

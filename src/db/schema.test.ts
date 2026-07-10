@@ -5,6 +5,9 @@ import {
   documentStatusEnum,
   embeddings,
   invitationStatusEnum,
+  kpiTelemetryCategoryEnum,
+  kpiTelemetrySourceEnum,
+  kpiTelemetryUnitEnum,
   membershipRoleEnum,
   permissionActionEnum,
   permissionResourceTypeEnum,
@@ -52,6 +55,9 @@ describe("database schema", () => {
       "archived"
     ]);
     expect(workflowRunStatusEnum.enumValues).toContain("needs_review");
+    expect(kpiTelemetryCategoryEnum.enumValues).toContain("governance");
+    expect(kpiTelemetryUnitEnum.enumValues).toContain("ratio");
+    expect(kpiTelemetrySourceEnum.enumValues).toContain("local_summary");
   });
 
   it("sets the embedding vector column to the configured dimensions", () => {

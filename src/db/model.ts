@@ -68,6 +68,36 @@ export const workflowRunStatuses = [
 ] as const;
 export type WorkflowRunStatus = (typeof workflowRunStatuses)[number];
 
+export const kpiTelemetryCategories = [
+  "business",
+  "product",
+  "ai",
+  "governance",
+  "workflow",
+  "reliability"
+] as const;
+export type KpiTelemetryCategory = (typeof kpiTelemetryCategories)[number];
+
+export const kpiTelemetryUnits = [
+  "count",
+  "percent",
+  "ratio",
+  "milliseconds",
+  "seconds",
+  "minutes",
+  "score"
+] as const;
+export type KpiTelemetryUnit = (typeof kpiTelemetryUnits)[number];
+
+export const kpiTelemetrySources = [
+  "local_summary",
+  "quality_summary",
+  "governance_summary",
+  "workflow_plan",
+  "manual_review"
+] as const;
+export type KpiTelemetrySource = (typeof kpiTelemetrySources)[number];
+
 export const databaseTableNames = [
   "organizations",
   "users",
@@ -81,7 +111,8 @@ export const databaseTableNames = [
   "citations",
   "workflows",
   "workflow_runs",
-  "audit_events"
+  "audit_events",
+  "kpi_telemetry_events"
 ] as const;
 
 export type DatabaseTableName = (typeof databaseTableNames)[number];
@@ -91,6 +122,10 @@ export function isMembershipRole(value: string): value is MembershipRole {
 }
 
 export function canRoleManagePermissionGrants(role: MembershipRole): boolean {
+  return role === "owner" || role === "admin";
+}
+
+export function canManageKpiTelemetry(role: MembershipRole): boolean {
   return role === "owner" || role === "admin";
 }
 

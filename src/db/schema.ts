@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   check,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -18,6 +19,9 @@ import {
   documentStatuses,
   embeddingDimensions,
   invitationStatuses,
+  kpiTelemetryCategories,
+  kpiTelemetrySources,
+  kpiTelemetryUnits,
   membershipRoles,
   permissionActions,
   permissionResourceTypes,
@@ -77,6 +81,18 @@ export const workflowStatusEnum = knowledgeos.enum(
 export const workflowRunStatusEnum = knowledgeos.enum(
   "workflow_run_status",
   workflowRunStatuses
+);
+export const kpiTelemetryCategoryEnum = knowledgeos.enum(
+  "kpi_telemetry_category",
+  kpiTelemetryCategories
+);
+export const kpiTelemetryUnitEnum = knowledgeos.enum(
+  "kpi_telemetry_unit",
+  kpiTelemetryUnits
+);
+export const kpiTelemetrySourceEnum = knowledgeos.enum(
+  "kpi_telemetry_source",
+  kpiTelemetrySources
 );
 
 export const organizations = knowledgeos.table("organizations", {
@@ -399,6 +415,38 @@ export const auditEvents = knowledgeos.table(
   ]
 );
 
+export const kpiTelemetryEvents = knowledgeos.table(
+  "kpi_telemetry_events",
+  {
+    id: varchar("id", { length: 160 }).primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    metricName: varchar("metric_name", { length: 120 }).notNull(),
+    category: kpiTelemetryCategoryEnum("category").notNull(),
+    value: doublePrecision("value").notNull(),
+    unit: kpiTelemetryUnitEnum("unit").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+    source: kpiTelemetrySourceEnum("source").notNull(),
+    metadata: jsonb("metadata").$type<JsonObject>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull()
+  },
+  (table) => [
+    index("kpi_telemetry_events_org_captured_idx").on(
+      table.organizationId,
+      table.capturedAt
+    ),
+    index("kpi_telemetry_events_org_category_idx").on(
+      table.organizationId,
+      table.category
+    ),
+    check("kpi_telemetry_metric_name_not_empty", sql`${table.metricName} <> ''`),
+    check("kpi_telemetry_id_not_empty", sql`${table.id} <> ''`)
+  ]
+);
+
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
   invitations: many(invitations),
@@ -406,7 +454,8 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   documents: many(documents),
   workflows: many(workflows),
   workflowRuns: many(workflowRuns),
-  auditEvents: many(auditEvents)
+  auditEvents: many(auditEvents),
+  kpiTelemetryEvents: many(kpiTelemetryEvents)
 }));
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -537,6 +586,16 @@ export const auditEventsRelations = relations(auditEvents, ({ one }) => ({
   })
 }));
 
+export const kpiTelemetryEventsRelations = relations(
+  kpiTelemetryEvents,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [kpiTelemetryEvents.organizationId],
+      references: [organizations.id]
+    })
+  })
+);
+
 export const schemaTables = {
   organizations,
   users,
@@ -550,7 +609,8 @@ export const schemaTables = {
   citations,
   workflows,
   workflow_runs: workflowRuns,
-  audit_events: auditEvents
+  audit_events: auditEvents,
+  kpi_telemetry_events: kpiTelemetryEvents
 } satisfies Record<(typeof databaseTableNames)[number], unknown>;
 
 export type Organization = typeof organizations.$inferSelect;
@@ -566,3 +626,4 @@ export type Citation = typeof citations.$inferSelect;
 export type Workflow = typeof workflows.$inferSelect;
 export type WorkflowRun = typeof workflowRuns.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
+export type KpiTelemetryEventRow = typeof kpiTelemetryEvents.$inferSelect;
