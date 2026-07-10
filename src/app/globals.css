@@ -303,7 +303,8 @@ button {
   background: var(--accent-strong);
 }
 
-.primary-button:disabled {
+.primary-button:disabled,
+.icon-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -446,12 +447,19 @@ button {
   grid-template-columns: minmax(120px, 0.8fr) minmax(140px, 1fr) minmax(120px, 0.8fr) minmax(140px, 1fr) minmax(100px, 0.7fr) auto;
 }
 
+.permission-grant-actions {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(92px, 1fr));
+}
+
 .permission-grant-output {
   border: 1px solid var(--border);
   border-radius: 8px;
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   padding: 12px;
 }
 
@@ -1110,6 +1118,7 @@ button {
   .audit-toolbar,
   .violation-toolbar,
   .permission-grant-form,
+  .permission-grant-actions,
   .permission-grant-output,
   .audit-row,
   .violation-row,

@@ -113,8 +113,10 @@ type PermissionGrantResourceType =
   | "document"
   | "workflow";
 type PermissionGrantAction = "read" | "write" | "admin";
+type PermissionGrantMode = "planned" | "created" | "existing";
 
 type PermissionGrantPlan = {
+  id?: string;
   organizationId: string;
   subjectType: PermissionGrantSubjectType;
   subjectId: string;
@@ -122,6 +124,11 @@ type PermissionGrantPlan = {
   resourceId: string;
   action: PermissionGrantAction;
   createdAt: string;
+};
+
+type PermissionGrantResult = PermissionGrantPlan & {
+  mode: PermissionGrantMode;
+  auditAction?: string;
 };
 
 const membershipRoles: MembershipRole[] = ["owner", "admin", "editor", "viewer"];
@@ -239,7 +246,7 @@ export function KnowledgeOSConsole() {
   const [grantResourceId, setGrantResourceId] = useState("workflow_1");
   const [grantAction, setGrantAction] = useState<PermissionGrantAction>("read");
   const [permissionGrantPlan, setPermissionGrantPlan] =
-    useState<PermissionGrantPlan | null>(null);
+    useState<PermissionGrantResult | null>(null);
   const [memberRoleEdits, setMemberRoleEdits] = useState<
     Record<string, MembershipRole>
   >({});
@@ -572,7 +579,7 @@ export function KnowledgeOSConsole() {
     }
   }
 
-  async function planPermissionGrant() {
+  async function submitPermissionGrant(persist: boolean) {
     if (!canManageCurrentMemberships) {
       setPermissionGrantPlan(null);
       setError("Owner or admin signed session is required.");
@@ -594,24 +601,43 @@ export function KnowledgeOSConsole() {
           subjectId: grantSubjectId,
           resourceType: grantResourceType,
           resourceId: grantResourceId,
-          action: grantAction
+          action: grantAction,
+          ...(persist ? { persist: true } : {})
         })
       });
       const payload = await readApiResponse<{
+        mode?: PermissionGrantMode;
         grant: PermissionGrantPlan;
+        auditEvent?: {
+          action: string;
+        };
       }>(response);
 
-      setPermissionGrantPlan(payload.grant);
+      setPermissionGrantPlan({
+        ...payload.grant,
+        mode: payload.mode ?? "planned",
+        auditAction: payload.auditEvent?.action
+      });
     } catch (caughtError) {
       setPermissionGrantPlan(null);
       setError(
         caughtError instanceof Error
           ? caughtError.message
-          : "Permission grant planning failed."
+          : persist
+            ? "Permission grant persistence failed."
+            : "Permission grant planning failed."
       );
     } finally {
       setBusyAction(null);
     }
+  }
+
+  function planPermissionGrant() {
+    void submitPermissionGrant(false);
+  }
+
+  function persistPermissionGrant() {
+    void submitPermissionGrant(true);
   }
 
   function selectSearchMode(nextMode: SearchMode) {
@@ -1264,7 +1290,9 @@ export function KnowledgeOSConsole() {
                 <h2>Permission grants</h2>
               </div>
               <span className="count-pill">
-                {permissionGrantPlan ? "Plan ready" : "Plan only"}
+                {permissionGrantPlan
+                  ? formatStatus(permissionGrantPlan.mode)
+                  : "Plan only"}
               </span>
             </div>
 
@@ -1276,8 +1304,8 @@ export function KnowledgeOSConsole() {
                   : "Manager session required"}
               </span>
               <span className="status-pill">
-                <Activity size={14} />
-                No durable write
+                <Database size={14} />
+                Durable write available
               </span>
             </div>
 
@@ -1345,24 +1373,50 @@ export function KnowledgeOSConsole() {
                   ))}
                 </select>
               </label>
-              <button
-                className="primary-button"
-                type="button"
-                onClick={planPermissionGrant}
-                disabled={
-                  busyAction !== null ||
-                  !canManageCurrentMemberships ||
-                  grantSubjectId.trim().length === 0 ||
-                  grantResourceId.trim().length === 0
-                }
-              >
-                <ShieldCheck size={16} />
-                {busyAction === "permission-grant" ? "Planning" : "Plan grant"}
-              </button>
+              <div className="permission-grant-actions">
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={planPermissionGrant}
+                  disabled={
+                    busyAction !== null ||
+                    !canManageCurrentMemberships ||
+                    grantSubjectId.trim().length === 0 ||
+                    grantResourceId.trim().length === 0
+                  }
+                >
+                  <ShieldCheck size={16} />
+                  {busyAction === "permission-grant" ? "Reviewing" : "Review"}
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={persistPermissionGrant}
+                  disabled={
+                    busyAction !== null ||
+                    !canManageCurrentMemberships ||
+                    grantSubjectId.trim().length === 0 ||
+                    grantResourceId.trim().length === 0
+                  }
+                >
+                  <Database size={16} />
+                  {busyAction === "permission-grant" ? "Saving" : "Persist"}
+                </button>
+              </div>
             </div>
 
             {permissionGrantPlan ? (
               <div className="permission-grant-output">
+                <div>
+                  <span>Mode</span>
+                  <strong>{formatStatus(permissionGrantPlan.mode)}</strong>
+                </div>
+                {permissionGrantPlan.id ? (
+                  <div>
+                    <span>Grant ID</span>
+                    <strong>{permissionGrantPlan.id}</strong>
+                  </div>
+                ) : null}
                 <div>
                   <span>Subject</span>
                   <strong>
@@ -1385,6 +1439,12 @@ export function KnowledgeOSConsole() {
                   <span>Planned</span>
                   <strong>{formatActivityTime(permissionGrantPlan.createdAt)}</strong>
                 </div>
+                {permissionGrantPlan.auditAction ? (
+                  <div>
+                    <span>Audit</span>
+                    <strong>{formatStatus(permissionGrantPlan.auditAction)}</strong>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="empty-state">No permission grant planned</div>
@@ -2098,6 +2158,18 @@ export function KnowledgeOSConsole() {
                 <div className="task-row done">
                   <CheckCircle2 size={16} />
                   <span>T-037 permission grant UI</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-038 permission grant persistence</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-039 permission grant persistence UI</span>
+                </div>
+                <div className="task-row in-progress">
+                  <Activity size={16} />
+                  <span>T-040 permission grant revoke API</span>
                 </div>
               </div>
             </div>
