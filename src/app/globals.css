@@ -207,6 +207,7 @@ a {
 .membership-panel,
 .audit-panel,
 .violation-panel,
+.permission-grant-panel,
 .answer-panel,
 .retrieval-quality-panel,
 .source-quality-panel,
@@ -381,7 +382,8 @@ button {
 
 .membership-toolbar,
 .audit-toolbar,
-.violation-toolbar {
+.violation-toolbar,
+.permission-grant-toolbar {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
@@ -432,8 +434,42 @@ button {
 }
 
 .audit-panel,
-.violation-panel {
+.violation-panel,
+.permission-grant-panel {
   align-content: start;
+}
+
+.permission-grant-form {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(140px, 1fr) minmax(120px, 0.8fr) minmax(140px, 1fr) minmax(100px, 0.7fr) auto;
+}
+
+.permission-grant-output {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 12px;
+}
+
+.permission-grant-output div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.permission-grant-output span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.permission-grant-output strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .audit-list,
@@ -1065,13 +1101,16 @@ button {
     display: grid;
   }
 
-  .membership-toolbar {
+  .membership-toolbar,
+  .permission-grant-toolbar {
     align-items: stretch;
     display: grid;
   }
 
   .audit-toolbar,
   .violation-toolbar,
+  .permission-grant-form,
+  .permission-grant-output,
   .audit-row,
   .violation-row,
   .membership-row {

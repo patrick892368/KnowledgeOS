@@ -106,7 +106,37 @@ type PermissionViolationSignal = {
   occurredAt: string;
 };
 
+type PermissionGrantSubjectType = "user" | "membership" | "role";
+type PermissionGrantResourceType =
+  | "organization"
+  | "source"
+  | "document"
+  | "workflow";
+type PermissionGrantAction = "read" | "write" | "admin";
+
+type PermissionGrantPlan = {
+  organizationId: string;
+  subjectType: PermissionGrantSubjectType;
+  subjectId: string;
+  resourceType: PermissionGrantResourceType;
+  resourceId: string;
+  action: PermissionGrantAction;
+  createdAt: string;
+};
+
 const membershipRoles: MembershipRole[] = ["owner", "admin", "editor", "viewer"];
+const permissionSubjectTypes: PermissionGrantSubjectType[] = [
+  "role",
+  "membership",
+  "user"
+];
+const permissionResourceTypes: PermissionGrantResourceType[] = [
+  "workflow",
+  "document",
+  "source",
+  "organization"
+];
+const permissionActions: PermissionGrantAction[] = ["read", "write", "admin"];
 
 const developmentHeaders = {
   "content-type": "application/json",
@@ -201,6 +231,15 @@ export function KnowledgeOSConsole() {
   const [permissionViolations, setPermissionViolations] = useState<
     PermissionViolationSignal[]
   >([]);
+  const [grantSubjectType, setGrantSubjectType] =
+    useState<PermissionGrantSubjectType>("role");
+  const [grantSubjectId, setGrantSubjectId] = useState("editor");
+  const [grantResourceType, setGrantResourceType] =
+    useState<PermissionGrantResourceType>("workflow");
+  const [grantResourceId, setGrantResourceId] = useState("workflow_1");
+  const [grantAction, setGrantAction] = useState<PermissionGrantAction>("read");
+  const [permissionGrantPlan, setPermissionGrantPlan] =
+    useState<PermissionGrantPlan | null>(null);
   const [memberRoleEdits, setMemberRoleEdits] = useState<
     Record<string, MembershipRole>
   >({});
@@ -216,6 +255,7 @@ export function KnowledgeOSConsole() {
     | "member-role"
     | "audit-events"
     | "permission-violations"
+    | "permission-grant"
     | "workflow"
     | null
   >(null);
@@ -532,6 +572,48 @@ export function KnowledgeOSConsole() {
     }
   }
 
+  async function planPermissionGrant() {
+    if (!canManageCurrentMemberships) {
+      setPermissionGrantPlan(null);
+      setError("Owner or admin signed session is required.");
+      return;
+    }
+
+    setBusyAction("permission-grant");
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/permission-grants", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          subjectType: grantSubjectType,
+          subjectId: grantSubjectId,
+          resourceType: grantResourceType,
+          resourceId: grantResourceId,
+          action: grantAction
+        })
+      });
+      const payload = await readApiResponse<{
+        grant: PermissionGrantPlan;
+      }>(response);
+
+      setPermissionGrantPlan(payload.grant);
+    } catch (caughtError) {
+      setPermissionGrantPlan(null);
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Permission grant planning failed."
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   function selectSearchMode(nextMode: SearchMode) {
     setSearchMode(nextMode);
     setLastPersistence(null);
@@ -808,6 +890,7 @@ export function KnowledgeOSConsole() {
     setSearchResponse(null);
     setAnswerResponse(null);
     setWorkflowRunPlan(null);
+    setPermissionGrantPlan(null);
     setError(null);
   }
 
@@ -1172,6 +1255,140 @@ export function KnowledgeOSConsole() {
                 <div className="empty-state">No permission violations loaded</div>
               ) : null}
             </div>
+          </section>
+
+          <section className="permission-grant-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Access</span>
+                <h2>Permission grants</h2>
+              </div>
+              <span className="count-pill">
+                {permissionGrantPlan ? "Plan ready" : "Plan only"}
+              </span>
+            </div>
+
+            <div className="permission-grant-toolbar">
+              <span className="status-pill">
+                <ShieldCheck size={14} />
+                {canManageCurrentMemberships
+                  ? "Owner/admin grants"
+                  : "Manager session required"}
+              </span>
+              <span className="status-pill">
+                <Activity size={14} />
+                No durable write
+              </span>
+            </div>
+
+            <div className="permission-grant-form">
+              <label className="field">
+                <span>Subject type</span>
+                <select
+                  value={grantSubjectType}
+                  onChange={(event) =>
+                    setGrantSubjectType(
+                      event.target.value as PermissionGrantSubjectType
+                    )
+                  }
+                >
+                  {permissionSubjectTypes.map((subjectType) => (
+                    <option key={subjectType} value={subjectType}>
+                      {formatStatus(subjectType)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Subject ID</span>
+                <input
+                  value={grantSubjectId}
+                  onChange={(event) => setGrantSubjectId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Resource type</span>
+                <select
+                  value={grantResourceType}
+                  onChange={(event) =>
+                    setGrantResourceType(
+                      event.target.value as PermissionGrantResourceType
+                    )
+                  }
+                >
+                  {permissionResourceTypes.map((resourceType) => (
+                    <option key={resourceType} value={resourceType}>
+                      {formatStatus(resourceType)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Resource ID</span>
+                <input
+                  value={grantResourceId}
+                  onChange={(event) => setGrantResourceId(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Action</span>
+                <select
+                  value={grantAction}
+                  onChange={(event) =>
+                    setGrantAction(event.target.value as PermissionGrantAction)
+                  }
+                >
+                  {permissionActions.map((action) => (
+                    <option key={action} value={action}>
+                      {formatStatus(action)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={planPermissionGrant}
+                disabled={
+                  busyAction !== null ||
+                  !canManageCurrentMemberships ||
+                  grantSubjectId.trim().length === 0 ||
+                  grantResourceId.trim().length === 0
+                }
+              >
+                <ShieldCheck size={16} />
+                {busyAction === "permission-grant" ? "Planning" : "Plan grant"}
+              </button>
+            </div>
+
+            {permissionGrantPlan ? (
+              <div className="permission-grant-output">
+                <div>
+                  <span>Subject</span>
+                  <strong>
+                    {formatStatus(permissionGrantPlan.subjectType)} |{" "}
+                    {permissionGrantPlan.subjectId}
+                  </strong>
+                </div>
+                <div>
+                  <span>Resource</span>
+                  <strong>
+                    {formatStatus(permissionGrantPlan.resourceType)} |{" "}
+                    {permissionGrantPlan.resourceId}
+                  </strong>
+                </div>
+                <div>
+                  <span>Action</span>
+                  <strong>{formatStatus(permissionGrantPlan.action)}</strong>
+                </div>
+                <div>
+                  <span>Planned</span>
+                  <strong>{formatActivityTime(permissionGrantPlan.createdAt)}</strong>
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">No permission grant planned</div>
+            )}
           </section>
 
           <section className="workspace-grid">
@@ -1869,6 +2086,18 @@ export function KnowledgeOSConsole() {
                 <div className="task-row done">
                   <CheckCircle2 size={16} />
                   <span>T-034 connector reliability trend</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-035 invitation lifecycle planning</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-036 permission grant planning</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-037 permission grant UI</span>
                 </div>
               </div>
             </div>
