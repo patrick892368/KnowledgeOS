@@ -22,7 +22,11 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { createAdminAnalyticsSummary } from "@/analytics/admin";
+import {
+  createAdminAnalyticsHistorySummary,
+  createAdminAnalyticsSnapshot,
+  createAdminAnalyticsSummary
+} from "@/analytics/admin";
 import type { AuthSession } from "@/auth/session";
 import type { LocalAnswerResponse } from "@/answers/types";
 import {
@@ -493,6 +497,32 @@ export function KnowledgeOSConsole() {
       workflowMetrics.status
     ]
   );
+  const adminAnalyticsHistory = useMemo(() => {
+    const previous = createAdminAnalyticsSnapshot({
+      summary: createAdminAnalyticsSummary({
+        retrievalQuality: "insufficient_context",
+        sourceQuality: "needs_attention",
+        sourceFreshness: "stale",
+        connectorReliability: "degraded",
+        workflowMetrics: "review_heavy",
+        operationalReliability: "warning",
+        governance: {
+          auditEventCount: 1,
+          permissionViolationCount: 1,
+          highSeverityViolationCount: 0
+        }
+      }),
+      capturedAt: "2026-07-10T00:30:00.000Z"
+    });
+    const latest = createAdminAnalyticsSnapshot({
+      summary: adminAnalytics,
+      capturedAt: "2026-07-10T01:30:00.000Z"
+    });
+
+    return createAdminAnalyticsHistorySummary({
+      snapshots: [previous, latest]
+    });
+  }, [adminAnalytics]);
 
   useEffect(() => {
     void loadCurrentSession({ quiet: true });
@@ -2983,6 +3013,58 @@ export function KnowledgeOSConsole() {
             </div>
           </section>
 
+          <section className="admin-analytics-history-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Analytics</span>
+                <h2>Analytics history</h2>
+              </div>
+              <span
+                className={`verification-badge status-${adminAnalyticsHistory.trend}`}
+              >
+                {formatStatus(adminAnalyticsHistory.trend)}
+              </span>
+            </div>
+
+            <div className="quality-metric-grid">
+              <div className="quality-metric">
+                <span>Snapshots</span>
+                <strong>{adminAnalyticsHistory.snapshotCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Latest</span>
+                <strong>{formatStatus(adminAnalyticsHistory.latestStatus)}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Previous</span>
+                <strong>
+                  {formatStatus(adminAnalyticsHistory.previousStatus)}
+                </strong>
+              </div>
+              <div className="quality-metric">
+                <span>Blocked</span>
+                <strong>{adminAnalyticsHistory.blockedSnapshotCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Local-only</span>
+                <strong>{adminAnalyticsHistory.localOnlySnapshotCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Latest at</span>
+                <strong>
+                  {adminAnalyticsHistory.latestCapturedAt
+                    ? formatActivityTime(adminAnalyticsHistory.latestCapturedAt)
+                    : "None"}
+                </strong>
+              </div>
+            </div>
+
+            <div className="quality-footnote">
+              <span>Explicit snapshots only</span>
+              <span>Remote telemetry not claimed</span>
+            </div>
+          </section>
+
           <section className="lower-grid">
             <div className="data-panel">
               <div className="panel-header">
@@ -3187,9 +3269,17 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-054 admin analytics summary</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-055 admin analytics UI</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-056 admin analytics history</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-055 admin analytics UI</span>
+                  <span>T-057 admin analytics history UI</span>
                 </div>
               </div>
             </div>

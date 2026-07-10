@@ -219,7 +219,8 @@ a {
 .release-readiness-panel,
 .release-history-panel,
 .operational-reliability-panel,
-.admin-analytics-panel {
+.admin-analytics-panel,
+.admin-analytics-history-panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -692,7 +693,8 @@ button {
 .release-readiness-panel,
 .release-history-panel,
 .operational-reliability-panel,
-.admin-analytics-panel {
+.admin-analytics-panel,
+.admin-analytics-history-panel {
   align-content: start;
 }
 
@@ -926,7 +928,8 @@ button {
 .release-readiness-panel,
 .release-history-panel,
 .operational-reliability-panel,
-.admin-analytics-panel {
+.admin-analytics-panel,
+.admin-analytics-history-panel {
   align-content: start;
 }
 
