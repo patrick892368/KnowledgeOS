@@ -10,6 +10,7 @@ import {
   Link as LinkIcon,
   LogIn,
   LogOut,
+  Mail,
   MessageSquare,
   RefreshCw,
   Search,
@@ -91,6 +92,20 @@ type ManagedAuditEvent = {
   createdAt: string;
 };
 
+type InvitationRole = Exclude<MembershipRole, "owner">;
+
+type InvitationResult = {
+  id: string;
+  organizationId: string;
+  email: string;
+  role: InvitationRole;
+  status: "pending";
+  createdAt: string;
+  expiresAt: string;
+  mode: "planned" | "created" | "existing";
+  auditAction?: string;
+};
+
 type PermissionViolationSignal = {
   id: string;
   organizationId: string;
@@ -137,6 +152,7 @@ type ManagedPermissionGrant = PermissionGrantPlan & {
 };
 
 const membershipRoles: MembershipRole[] = ["owner", "admin", "editor", "viewer"];
+const invitationRoles: InvitationRole[] = ["admin", "editor", "viewer"];
 const permissionSubjectTypes: PermissionGrantSubjectType[] = [
   "role",
   "membership",
@@ -251,6 +267,13 @@ export function KnowledgeOSConsole() {
   const [workflowRunPlan, setWorkflowRunPlan] =
     useState<WorkflowRunPlan | null>(null);
   const [memberships, setMemberships] = useState<ManagedMembership[]>([]);
+  const [invitationEmail, setInvitationEmail] = useState(
+    "new.member@example.com"
+  );
+  const [invitationRole, setInvitationRole] = useState<InvitationRole>("viewer");
+  const [invitationExpiresInDays, setInvitationExpiresInDays] = useState(7);
+  const [invitationResult, setInvitationResult] =
+    useState<InvitationResult | null>(null);
   const [auditEvents, setAuditEvents] = useState<ManagedAuditEvent[]>([]);
   const [permissionViolations, setPermissionViolations] = useState<
     PermissionViolationSignal[]
@@ -283,6 +306,7 @@ export function KnowledgeOSConsole() {
     | "login"
     | "members"
     | "member-role"
+    | "invitation"
     | "audit-events"
     | "permission-violations"
     | "permission-grant"
@@ -602,6 +626,65 @@ export function KnowledgeOSConsole() {
     } finally {
       setBusyAction(null);
     }
+  }
+
+  async function submitInvitation(persist: boolean) {
+    if (!canManageCurrentMemberships) {
+      setInvitationResult(null);
+      setError("Owner or admin signed session is required.");
+      return;
+    }
+
+    setBusyAction("invitation");
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/invitations", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          email: invitationEmail,
+          role: invitationRole,
+          expiresInDays: invitationExpiresInDays,
+          ...(persist ? { persist: true } : {})
+        })
+      });
+      const payload = await readApiResponse<{
+        mode?: InvitationResult["mode"];
+        invitation: Omit<InvitationResult, "mode" | "auditAction">;
+        auditEvent?: {
+          action: string;
+        };
+      }>(response);
+
+      setInvitationResult({
+        ...payload.invitation,
+        mode: payload.mode ?? "planned",
+        auditAction: payload.auditEvent?.action
+      });
+    } catch (caughtError) {
+      setInvitationResult(null);
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : persist
+            ? "Invitation persistence failed."
+            : "Invitation planning failed."
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  function planInvitation() {
+    void submitInvitation(false);
+  }
+
+  function persistInvitationFromUi() {
+    void submitInvitation(true);
   }
 
   async function submitPermissionGrant(persist: boolean) {
@@ -1039,6 +1122,7 @@ export function KnowledgeOSConsole() {
     setPermissionGrantPlan(null);
     setPermissionGrants([]);
     setPendingRevokeGrantId(null);
+    setInvitationResult(null);
     setError(null);
   }
 
@@ -1193,6 +1277,125 @@ export function KnowledgeOSConsole() {
                   : "No signed session"}
               </span>
             </div>
+          </section>
+
+          <section className="invitation-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Onboarding</span>
+                <h2>Invitations</h2>
+              </div>
+              <span className="count-pill">
+                {invitationResult ? formatStatus(invitationResult.mode) : "Plan only"}
+              </span>
+            </div>
+
+            <div className="invitation-toolbar">
+              <span className="status-pill">
+                <ShieldCheck size={14} />
+                {canManageCurrentMemberships
+                  ? "Owner/admin invites"
+                  : "Manager session required"}
+              </span>
+              <span className="status-pill">
+                <Mail size={14} />
+                Token-safe persistence
+              </span>
+            </div>
+
+            <div className="invitation-form">
+              <label className="field">
+                <span>Email</span>
+                <input
+                  value={invitationEmail}
+                  onChange={(event) => setInvitationEmail(event.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>Role</span>
+                <select
+                  value={invitationRole}
+                  onChange={(event) =>
+                    setInvitationRole(event.target.value as InvitationRole)
+                  }
+                >
+                  {invitationRoles.map((role) => (
+                    <option key={role} value={role}>
+                      {role}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Expires</span>
+                <input
+                  max={30}
+                  min={1}
+                  type="number"
+                  value={invitationExpiresInDays}
+                  onChange={(event) =>
+                    setInvitationExpiresInDays(Number(event.target.value))
+                  }
+                />
+              </label>
+              <div className="invitation-actions">
+                <button
+                  className="icon-button"
+                  type="button"
+                  onClick={planInvitation}
+                  disabled={
+                    busyAction !== null ||
+                    !canManageCurrentMemberships ||
+                    invitationEmail.trim().length === 0
+                  }
+                >
+                  <ShieldCheck size={16} />
+                  {busyAction === "invitation" ? "Reviewing" : "Review"}
+                </button>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={persistInvitationFromUi}
+                  disabled={
+                    busyAction !== null ||
+                    !canManageCurrentMemberships ||
+                    invitationEmail.trim().length === 0
+                  }
+                >
+                  <Database size={16} />
+                  {busyAction === "invitation" ? "Saving" : "Persist"}
+                </button>
+              </div>
+            </div>
+
+            {invitationResult ? (
+              <div className="invitation-output">
+                <div>
+                  <span>Mode</span>
+                  <strong>{formatStatus(invitationResult.mode)}</strong>
+                </div>
+                <div>
+                  <span>Email</span>
+                  <strong>{invitationResult.email}</strong>
+                </div>
+                <div>
+                  <span>Role</span>
+                  <strong>{invitationResult.role}</strong>
+                </div>
+                <div>
+                  <span>Expires</span>
+                  <strong>{formatActivityTime(invitationResult.expiresAt)}</strong>
+                </div>
+                {invitationResult.auditAction ? (
+                  <div>
+                    <span>Audit</span>
+                    <strong>{formatStatus(invitationResult.auditAction)}</strong>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="empty-state">No invitation planned</div>
+            )}
           </section>
 
           <section className="membership-panel">
@@ -2347,9 +2550,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-042 invitation persistence</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-043 invitation persistence UI</span>
+                </div>
                 <div className="task-row in-progress">
                   <Activity size={16} />
-                  <span>T-043 invitation persistence UI</span>
+                  <span>T-044 invitation revoke API</span>
                 </div>
               </div>
             </div>
