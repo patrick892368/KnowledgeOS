@@ -1,0 +1,2 @@
+DROP INDEX "knowledgeos"."invitations_org_email_status_uidx";--> statement-breakpoint
+CREATE UNIQUE INDEX "invitations_org_email_pending_uidx" ON "knowledgeos"."invitations" USING btree ("organization_id","email") WHERE "knowledgeos"."invitations"."status" = 'pending';

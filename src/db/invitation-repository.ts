@@ -1,11 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import type { AuthSession } from "@/auth/session";
 import type { InvitationStatus, MembershipRole } from "@/db/model";
 import {
+  canPlanInvitations,
   createInvitationPlan,
+  InvitationLifecycleError,
   type InvitationPlan,
   type InvitationPlanPayload
 } from "@/invitations/lifecycle";
@@ -22,13 +24,20 @@ export interface PersistedInvitation {
   role: MembershipRole;
   status: InvitationStatus;
   createdAt: Date;
+  updatedAt: Date;
   expiresAt: Date;
+  revokedAt: Date | null;
 }
 
 export interface InvitationPersistenceResult {
   mode: InvitationPersistenceMode;
   invitation: PersistedInvitation;
   auditIntent: typeof auditEvents.$inferInsert;
+  auditEvent: typeof auditEvents.$inferInsert;
+}
+
+export interface InvitationRevocationResult {
+  invitation: PersistedInvitation;
   auditEvent: typeof auditEvents.$inferInsert;
 }
 
@@ -39,7 +48,9 @@ const invitationSelection = {
   role: invitations.role,
   status: invitations.status,
   createdAt: invitations.createdAt,
-  expiresAt: invitations.expiresAt
+  updatedAt: invitations.updatedAt,
+  expiresAt: invitations.expiresAt,
+  revokedAt: invitations.revokedAt
 };
 
 export function hashInvitationToken(token: string): string {
@@ -65,6 +76,48 @@ export function createInvitationPersistenceAuditEvent(input: {
       plannedAction: input.plan.auditIntent.action
     }
   };
+}
+
+export function createInvitationRevocationAuditEvent(input: {
+  session: AuthSession;
+  invitation: PersistedInvitation;
+  now?: Date;
+}): typeof auditEvents.$inferInsert {
+  const revokedAt = input.now ?? new Date();
+
+  return {
+    organizationId: input.session.organizationId,
+    actorUserId: input.session.userId,
+    action: "invitation.revoked",
+    resourceType: "organization",
+    resourceId: input.session.organizationId,
+    metadata: {
+      invitationId: input.invitation.id,
+      email: input.invitation.email,
+      role: input.invitation.role,
+      previousStatus: "pending",
+      nextStatus: "revoked",
+      revokedAt: revokedAt.toISOString()
+    }
+  };
+}
+
+export async function listOrganizationInvitations(
+  db: Database,
+  session: AuthSession
+): Promise<PersistedInvitation[]> {
+  if (!canPlanInvitations(session.role)) {
+    throw new InvitationLifecycleError(
+      "forbidden",
+      "Only owner or admin members can manage organization invitations."
+    );
+  }
+
+  return db
+    .select(invitationSelection)
+    .from(invitations)
+    .where(eq(invitations.organizationId, session.organizationId))
+    .orderBy(desc(invitations.createdAt));
 }
 
 export async function persistInvitation(
@@ -150,6 +203,62 @@ export async function persistInvitation(
       mode,
       invitation,
       auditIntent: persistedPlan.auditIntent,
+      auditEvent
+    };
+  });
+}
+
+export async function revokeInvitation(
+  db: Database,
+  input: {
+    session: AuthSession;
+    invitationId: string;
+    now?: Date;
+  }
+): Promise<InvitationRevocationResult> {
+  if (!canPlanInvitations(input.session.role)) {
+    throw new InvitationLifecycleError(
+      "forbidden",
+      "Only owner or admin members can manage organization invitations."
+    );
+  }
+
+  const revokedAt = input.now ?? new Date();
+
+  return db.transaction(async (tx) => {
+    const [invitation] = await tx
+      .update(invitations)
+      .set({
+        status: "revoked",
+        revokedAt,
+        updatedAt: revokedAt
+      })
+      .where(
+        and(
+          eq(invitations.id, input.invitationId),
+          eq(invitations.organizationId, input.session.organizationId),
+          eq(invitations.status, "pending")
+        )
+      )
+      .returning(invitationSelection);
+
+    if (!invitation) {
+      throw new InvitationLifecycleError(
+        "not_found",
+        "Pending invitation was not found."
+      );
+    }
+
+    const auditEvent = createInvitationRevocationAuditEvent({
+      session: input.session,
+      invitation,
+      now: revokedAt
+    });
+
+    await tx.insert(auditEvents).values(auditEvent);
+
+    return {
+      invitation,
       auditEvent
     };
   });

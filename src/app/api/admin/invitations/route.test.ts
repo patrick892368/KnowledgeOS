@@ -6,6 +6,8 @@ import { InvitationLifecycleError } from "@/invitations/lifecycle";
 const mocks = vi.hoisted(() => ({
   requireSession: vi.fn(),
   createDatabaseClient: vi.fn(),
+  listOrganizationInvitations: vi.fn(),
+  revokeInvitation: vi.fn(),
   persistInvitation: vi.fn()
 }));
 
@@ -28,11 +30,13 @@ vi.mock("@/db/invitation-repository", async (importOriginal) => {
 
   return {
     ...actual,
+    listOrganizationInvitations: mocks.listOrganizationInvitations,
+    revokeInvitation: mocks.revokeInvitation,
     persistInvitation: mocks.persistInvitation
   };
 });
 
-import { POST } from "./route";
+import { DELETE, GET, POST } from "./route";
 
 const session: AuthSession = {
   userId: "22222222-2222-4222-8222-222222222222",
@@ -51,6 +55,13 @@ function request(body: unknown): Request {
   });
 }
 
+function deleteRequest(body: unknown): Request {
+  return new Request("http://knowledgeos.local/api/admin/invitations", {
+    method: "DELETE",
+    body: JSON.stringify(body)
+  });
+}
+
 const persistedInvitation = {
   id: "44444444-4444-4444-8444-444444444444",
   organizationId: session.organizationId,
@@ -58,7 +69,16 @@ const persistedInvitation = {
   role: "editor",
   status: "pending",
   createdAt: new Date("2026-07-10T00:00:00.000Z"),
-  expiresAt: new Date("2026-07-17T00:00:00.000Z")
+  updatedAt: new Date("2026-07-10T00:00:00.000Z"),
+  expiresAt: new Date("2026-07-17T00:00:00.000Z"),
+  revokedAt: null
+};
+
+const revokedInvitation = {
+  ...persistedInvitation,
+  status: "revoked",
+  updatedAt: new Date("2026-07-10T02:00:00.000Z"),
+  revokedAt: new Date("2026-07-10T02:00:00.000Z")
 };
 
 const auditIntent = {
@@ -379,5 +399,206 @@ describe("POST /api/admin/invitations", () => {
 
     expect(response.status).toBe(401);
     expect(payload.error.code).toBe("unauthenticated");
+  });
+});
+
+describe("GET /api/admin/invitations", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("lists current-organization invitations for manager sessions", async () => {
+    const db = { name: "db" };
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockReturnValue(db);
+    mocks.listOrganizationInvitations.mockResolvedValue([persistedInvitation]);
+
+    const response = await GET();
+    const payload = (await response.json()) as {
+      invitations: Array<{
+        id: string;
+        organizationId: string;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.invitations).toEqual([
+      expect.objectContaining({
+        id: persistedInvitation.id,
+        organizationId: session.organizationId,
+        createdAt: "2026-07-10T00:00:00.000Z",
+        updatedAt: "2026-07-10T00:00:00.000Z"
+      })
+    ]);
+    expect(JSON.stringify(payload)).not.toMatch(/token|secret|password/i);
+    expect(mocks.listOrganizationInvitations).toHaveBeenCalledWith(db, session);
+  });
+
+  it("returns list authorization failures", async () => {
+    const db = { name: "db" };
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockReturnValue(db);
+    mocks.listOrganizationInvitations.mockRejectedValue(
+      new InvitationLifecycleError(
+        "forbidden",
+        "Only owner or admin members can manage organization invitations."
+      )
+    );
+
+    const response = await GET();
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(403);
+    expect(payload.error.code).toBe("forbidden");
+  });
+
+  it("returns database unavailable when invitations cannot be listed", async () => {
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockImplementation(() => {
+      throw new Error("DATABASE_URL is required to create a database client.");
+    });
+
+    const response = await GET();
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(503);
+    expect(payload.error.code).toBe("database_unavailable");
+  });
+});
+
+describe("DELETE /api/admin/invitations", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("revokes a current-organization pending invitation", async () => {
+    const db = { name: "db" };
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockReturnValue(db);
+    mocks.revokeInvitation.mockResolvedValue({
+      invitation: revokedInvitation,
+      auditEvent: {
+        ...auditIntent,
+        action: "invitation.revoked",
+        metadata: {
+          invitationId: persistedInvitation.id,
+          email: persistedInvitation.email,
+          previousStatus: "pending",
+          nextStatus: "revoked"
+        }
+      }
+    });
+
+    const response = await DELETE(
+      deleteRequest({
+        invitationId: persistedInvitation.id
+      })
+    );
+    const payload = (await response.json()) as {
+      invitation: {
+        id: string;
+        status: string;
+        revokedAt: string;
+      };
+      auditEvent: {
+        action: string;
+        metadata: Record<string, unknown>;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.invitation).toMatchObject({
+      id: persistedInvitation.id,
+      status: "revoked",
+      revokedAt: "2026-07-10T02:00:00.000Z"
+    });
+    expect(payload.auditEvent).toMatchObject({
+      action: "invitation.revoked",
+      metadata: {
+        invitationId: persistedInvitation.id,
+        nextStatus: "revoked"
+      }
+    });
+    expect(JSON.stringify(payload)).not.toMatch(/token|secret|password/i);
+    expect(mocks.revokeInvitation).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        session,
+        invitationId: persistedInvitation.id
+      })
+    );
+  });
+
+  it("rejects invalid revocation payloads before database access", async () => {
+    mocks.requireSession.mockResolvedValue(session);
+
+    const response = await DELETE(deleteRequest({}));
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(400);
+    expect(payload.error.code).toBe("invalid_payload");
+    expect(mocks.createDatabaseClient).not.toHaveBeenCalled();
+    expect(mocks.revokeInvitation).not.toHaveBeenCalled();
+  });
+
+  it("returns not found for missing, cross-organization, or non-pending invitations", async () => {
+    const db = { name: "db" };
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockReturnValue(db);
+    mocks.revokeInvitation.mockRejectedValue(
+      new InvitationLifecycleError(
+        "not_found",
+        "Pending invitation was not found."
+      )
+    );
+
+    const response = await DELETE(
+      deleteRequest({
+        invitationId: "99999999-9999-4999-8999-999999999999"
+      })
+    );
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(404);
+    expect(payload.error.code).toBe("not_found");
+  });
+
+  it("returns database unavailable when revocation cannot open the database", async () => {
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockImplementation(() => {
+      throw new Error("DATABASE_URL is required to create a database client.");
+    });
+
+    const response = await DELETE(
+      deleteRequest({
+        invitationId: persistedInvitation.id
+      })
+    );
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(503);
+    expect(payload.error.code).toBe("database_unavailable");
   });
 });

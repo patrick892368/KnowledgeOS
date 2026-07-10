@@ -1,7 +1,9 @@
 import { authErrorResponse, requireSession } from "@/auth/session";
 import { createDatabaseClient } from "@/db/client";
 import {
+  listOrganizationInvitations,
   persistInvitation,
+  revokeInvitation,
   type PersistedInvitation
 } from "@/db/invitation-repository";
 import {
@@ -10,7 +12,8 @@ import {
   invitationLifecycleErrorResponse,
   parseInvitationPersistFlag,
   type InvitationPlan,
-  parseInvitationPlanPayload
+  parseInvitationPlanPayload,
+  parseInvitationRevocationPayload
 } from "@/invitations/lifecycle";
 
 function toDatabaseUnavailableError(error: unknown): InvitationLifecycleError {
@@ -28,8 +31,43 @@ function serializeInvitation(invitation: InvitationPlan | PersistedInvitation) {
     role: invitation.role,
     status: invitation.status,
     createdAt: invitation.createdAt.toISOString(),
-    expiresAt: invitation.expiresAt.toISOString()
+    ...("updatedAt" in invitation
+      ? { updatedAt: invitation.updatedAt.toISOString() }
+      : {}),
+    expiresAt: invitation.expiresAt.toISOString(),
+    ...("revokedAt" in invitation && invitation.revokedAt
+      ? { revokedAt: invitation.revokedAt.toISOString() }
+      : {})
   };
+}
+
+export async function GET() {
+  try {
+    const session = await requireSession();
+
+    try {
+      const persistedInvitations = await listOrganizationInvitations(
+        createDatabaseClient(),
+        session
+      );
+
+      return Response.json({
+        invitations: persistedInvitations.map(serializeInvitation)
+      });
+    } catch (error) {
+      if (error instanceof InvitationLifecycleError) {
+        throw error;
+      }
+
+      throw toDatabaseUnavailableError(error);
+    }
+  } catch (error) {
+    if (error instanceof InvitationLifecycleError) {
+      return invitationLifecycleErrorResponse(error);
+    }
+
+    return authErrorResponse(error);
+  }
 }
 
 export async function POST(request: Request) {
@@ -87,6 +125,48 @@ export async function POST(request: Request) {
       },
       { status: 201 }
     );
+  } catch (error) {
+    if (error instanceof InvitationLifecycleError) {
+      return invitationLifecycleErrorResponse(error);
+    }
+
+    return authErrorResponse(error);
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const session = await requireSession();
+    let payload: unknown;
+
+    try {
+      payload = await request.json();
+    } catch {
+      throw new InvitationLifecycleError(
+        "invalid_payload",
+        "Request body must be valid JSON."
+      );
+    }
+
+    const revoke = parseInvitationRevocationPayload(payload);
+
+    try {
+      const result = await revokeInvitation(createDatabaseClient(), {
+        session,
+        invitationId: revoke.invitationId
+      });
+
+      return Response.json({
+        invitation: serializeInvitation(result.invitation),
+        auditEvent: result.auditEvent
+      });
+    } catch (error) {
+      if (error instanceof InvitationLifecycleError) {
+        throw error;
+      }
+
+      throw toDatabaseUnavailableError(error);
+    }
   } catch (error) {
     if (error instanceof InvitationLifecycleError) {
       return invitationLifecycleErrorResponse(error);

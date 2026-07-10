@@ -15,6 +15,13 @@
       "when": 1783675997504,
       "tag": "0001_complete_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783676904232,
+      "tag": "0002_lame_clint_barton",
+      "breakpoints": true
     }
   ]
 }

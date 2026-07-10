@@ -7,7 +7,8 @@ import {
   createInvitationPlan,
   InvitationLifecycleError,
   parseInvitationPersistFlag,
-  parseInvitationPlanPayload
+  parseInvitationPlanPayload,
+  parseInvitationRevocationPayload
 } from "./lifecycle";
 
 const ownerSession: AuthSession = {
@@ -78,6 +79,24 @@ describe("parseInvitationPersistFlag", () => {
   it("rejects invalid persistence flags", () => {
     expect(() => parseInvitationPersistFlag({ persist: "yes" })).toThrow(
       "persist must be a boolean when provided."
+    );
+  });
+});
+
+describe("parseInvitationRevocationPayload", () => {
+  it("accepts a trimmed invitation id", () => {
+    expect(
+      parseInvitationRevocationPayload({
+        invitationId: " invitation_1 "
+      })
+    ).toEqual({
+      invitationId: "invitation_1"
+    });
+  });
+
+  it("rejects missing invitation ids", () => {
+    expect(() => parseInvitationRevocationPayload({})).toThrow(
+      "invitationId is required."
     );
   });
 });

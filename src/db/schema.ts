@@ -138,11 +138,12 @@ export const invitations = knowledgeos.table(
     ...timestamps
   },
   (table) => [
-    uniqueIndex("invitations_org_email_status_uidx").on(
-      table.organizationId,
-      table.email,
-      table.status
-    ),
+    uniqueIndex("invitations_org_email_pending_uidx")
+      .on(
+        table.organizationId,
+        table.email
+      )
+      .where(sql`${table.status} = 'pending'`),
     index("invitations_org_status_idx").on(table.organizationId, table.status),
     check("invitations_email_not_empty", sql`${table.email} <> ''`),
     check("invitations_token_hash_not_empty", sql`${table.tokenHash} <> ''`)

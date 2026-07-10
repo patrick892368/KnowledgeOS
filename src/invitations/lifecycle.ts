@@ -54,6 +54,10 @@ export interface InvitationPlan {
   auditIntent: typeof auditEvents.$inferInsert;
 }
 
+export interface InvitationRevocationPayload {
+  invitationId: string;
+}
+
 const defaultExpirationDays = 7;
 const maxExpirationDays = 30;
 const dayInMs = 24 * 60 * 60 * 1000;
@@ -64,6 +68,10 @@ export function canPlanInvitations(role: MembershipRole): boolean {
 
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function readTrimmedString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function isValidEmail(value: string): boolean {
@@ -158,6 +166,31 @@ export function parseInvitationPersistFlag(payload: unknown): boolean {
   }
 
   return candidate.persist;
+}
+
+export function parseInvitationRevocationPayload(
+  payload: unknown
+): InvitationRevocationPayload {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    throw new InvitationLifecycleError(
+      "invalid_payload",
+      "Request body must be an object."
+    );
+  }
+
+  const candidate = payload as Partial<Record<"invitationId", unknown>>;
+  const invitationId = readTrimmedString(candidate.invitationId);
+
+  if (!invitationId) {
+    throw new InvitationLifecycleError(
+      "invalid_payload",
+      "invitationId is required."
+    );
+  }
+
+  return {
+    invitationId
+  };
 }
 
 export function createInvitationPlan(input: {
