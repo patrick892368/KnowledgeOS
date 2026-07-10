@@ -215,7 +215,8 @@ a {
 .source-freshness-panel,
 .connector-reliability-panel,
 .workflow-panel,
-.workflow-metrics-panel {
+.workflow-metrics-panel,
+.release-readiness-panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -684,8 +685,44 @@ button {
 }
 
 .workflow-panel,
-.workflow-metrics-panel {
+.workflow-metrics-panel,
+.release-readiness-panel {
   align-content: start;
+}
+
+.release-readiness-strip {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.release-check-list {
+  display: grid;
+  gap: 8px;
+}
+
+.release-check-row {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(120px, 1fr) auto minmax(180px, 1fr);
+  padding: 10px 12px;
+}
+
+.release-check-row span {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.release-check-row strong,
+.release-check-row small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
 }
 
 .workflow-toolbar {
@@ -841,7 +878,8 @@ button {
 }
 
 .verification-badge.status-supported,
-.verification-badge.status-fresh {
+.verification-badge.status-fresh,
+.verification-badge.status-ready {
   background: #e7f8ee;
   color: var(--success);
 }
@@ -857,13 +895,15 @@ button {
 .verification-badge.status-stale,
 .verification-badge.status-degraded,
 .verification-badge.status-needs_attention,
-.verification-badge.status-review_heavy {
+.verification-badge.status-review_heavy,
+.verification-badge.status-warning {
   background: #fff7e6;
   color: var(--warning);
 }
 
 .verification-badge.status-unsupported,
-.verification-badge.status-needs_review {
+.verification-badge.status-needs_review,
+.verification-badge.status-blocked {
   background: #fff1f0;
   color: var(--danger);
 }
@@ -872,7 +912,8 @@ button {
 .source-quality-panel,
 .source-freshness-panel,
 .connector-reliability-panel,
-.workflow-metrics-panel {
+.workflow-metrics-panel,
+.release-readiness-panel {
   align-content: start;
 }
 
@@ -1137,7 +1178,8 @@ button {
   }
 
   .verification-badge.status-supported,
-  .verification-badge.status-fresh {
+  .verification-badge.status-fresh,
+  .verification-badge.status-ready {
     background: #173b27;
   }
 
@@ -1151,12 +1193,14 @@ button {
   .verification-badge.status-stale,
   .verification-badge.status-degraded,
   .verification-badge.status-needs_attention,
-  .verification-badge.status-review_heavy {
+  .verification-badge.status-review_heavy,
+  .verification-badge.status-warning {
     background: #3b2d12;
   }
 
   .verification-badge.status-unsupported,
-  .verification-badge.status-needs_review {
+  .verification-badge.status-needs_review,
+  .verification-badge.status-blocked {
     background: #3d1f1f;
   }
 
@@ -1242,6 +1286,7 @@ button {
   .permission-grant-row,
   .audit-row,
   .violation-row,
+  .release-check-row,
   .membership-row {
     align-items: stretch;
     grid-template-columns: 1fr;

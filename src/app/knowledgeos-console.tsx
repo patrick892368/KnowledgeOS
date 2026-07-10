@@ -33,6 +33,7 @@ import {
 import type { NormalizedIngestionResult } from "@/ingestion/types";
 import { createConnectorReliabilitySummary } from "@/quality/connector-reliability";
 import { createSourceFreshnessSummary } from "@/quality/freshness";
+import { createReleaseReadinessSummary } from "@/quality/release-readiness";
 import { createRetrievalQualitySummary } from "@/quality/retrieval";
 import { createSourceQualitySummary } from "@/quality/source";
 import type { LocalSearchResponse } from "@/search/types";
@@ -391,6 +392,26 @@ export function KnowledgeOSConsole() {
         plans: workflowRunPlan ? [workflowRunPlan] : []
       }),
     [workflowRunPlan]
+  );
+  const releaseReadiness = useMemo(
+    () =>
+      createReleaseReadinessSummary({
+        checks: [
+          { label: "Build", status: "pass" },
+          { label: "Lint", status: "pass" },
+          { label: "Type Check", status: "pass" },
+          { label: "Tests", status: "pass" },
+          { label: "Review Gate", status: "pass" },
+          { label: "Documentation", status: "pass" }
+        ],
+        knownRisks: [
+          {
+            severity: "medium",
+            description: "Live database smoke check has not run."
+          }
+        ]
+      }),
+    []
   );
 
   useEffect(() => {
@@ -2627,6 +2648,74 @@ export function KnowledgeOSConsole() {
             )}
           </section>
 
+          <section className="release-readiness-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Release</span>
+                <h2>Readiness</h2>
+              </div>
+              <span className={`verification-badge status-${releaseReadiness.status}`}>
+                {formatStatus(releaseReadiness.status)}
+              </span>
+            </div>
+
+            <div className="quality-metric-grid">
+              <div className="quality-metric">
+                <span>Passed</span>
+                <strong>{releaseReadiness.passedChecks}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Warnings</span>
+                <strong>{releaseReadiness.warningChecks}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Failed</span>
+                <strong>{releaseReadiness.failedChecks}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Not run</span>
+                <strong>{releaseReadiness.notRunChecks}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Known risks</span>
+                <strong>{releaseReadiness.knownRiskCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>High risk</span>
+                <strong>{releaseReadiness.highRiskCount}</strong>
+              </div>
+            </div>
+
+            <div className="release-readiness-strip">
+              <span className="status-pill">
+                <ShieldCheck size={14} />
+                Local gates only
+              </span>
+              <span className="status-pill">
+                <Database size={14} />
+                Remote CI not claimed
+              </span>
+            </div>
+
+            <div className="release-check-list">
+              {releaseReadiness.checks.map((check) => (
+                <article
+                  className={`release-check-row status-${check.status}`}
+                  key={check.label}
+                >
+                  <span>{check.label}</span>
+                  <strong>{formatStatus(check.status)}</strong>
+                  {check.detail ? <small>{check.detail}</small> : null}
+                </article>
+              ))}
+              <article className="release-check-row status-warning">
+                <span>Known risk</span>
+                <strong>warning</strong>
+                <small>Live database smoke check has not run.</small>
+              </article>
+            </div>
+          </section>
+
           <section className="lower-grid">
             <div className="data-panel">
               <div className="panel-header">
@@ -2799,9 +2888,17 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-046 workflow metrics foundation</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-047 workflow metrics UI</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-048 release readiness summary</span>
+                </div>
                 <div className="task-row in-progress">
                   <Activity size={16} />
-                  <span>T-047 workflow metrics UI</span>
+                  <span>T-049 release readiness UI</span>
                 </div>
               </div>
             </div>
