@@ -7,6 +7,13 @@ import type { WorkflowMetricsStatus } from "@/workflows/metrics";
 
 export type AdminAnalyticsStatus = "no_data" | "healthy" | "warning" | "blocked";
 
+export type AdminAnalyticsTrend =
+  | "no_history"
+  | "improving"
+  | "stable"
+  | "regressing"
+  | "blocked";
+
 export type AdminAnalyticsCategory =
   | "knowledge"
   | "governance"
@@ -33,6 +40,30 @@ export interface AdminAnalyticsSummary {
   signals: AdminAnalyticsSignal[];
 }
 
+export interface AdminAnalyticsSnapshot {
+  capturedAt: string;
+  status: AdminAnalyticsStatus;
+  scope: "local_explicit_inputs_only";
+  signalCount: number;
+  healthySignals: number;
+  warningSignals: number;
+  blockedSignals: number;
+  noDataSignals: number;
+  governanceEventCount: number;
+  permissionViolationCount: number;
+  highSeverityViolationCount: number;
+}
+
+export interface AdminAnalyticsHistorySummary {
+  trend: AdminAnalyticsTrend;
+  snapshotCount: number;
+  latestStatus: AdminAnalyticsStatus | "none";
+  previousStatus: AdminAnalyticsStatus | "none";
+  latestCapturedAt: string | null;
+  localOnlySnapshotCount: number;
+  blockedSnapshotCount: number;
+}
+
 interface GovernanceAnalyticsInput {
   auditEventCount?: number;
   permissionViolationCount?: number;
@@ -41,6 +72,25 @@ interface GovernanceAnalyticsInput {
 
 function boundedCount(value: number | undefined): number {
   return Math.max(0, Math.floor(value ?? 0));
+}
+
+function analyticsScore(status: AdminAnalyticsStatus): number {
+  return status === "healthy"
+    ? 3
+    : status === "warning"
+      ? 2
+      : status === "blocked"
+        ? 1
+        : 0;
+}
+
+function sortSnapshots(
+  snapshots: AdminAnalyticsSnapshot[]
+): AdminAnalyticsSnapshot[] {
+  return [...snapshots].sort(
+    (left, right) =>
+      new Date(right.capturedAt).getTime() - new Date(left.capturedAt).getTime()
+  );
 }
 
 function mapRetrievalQuality(
@@ -220,5 +270,64 @@ export function createAdminAnalyticsSummary(input: {
     permissionViolationCount,
     highSeverityViolationCount,
     signals
+  };
+}
+
+export function createAdminAnalyticsSnapshot(input: {
+  summary: AdminAnalyticsSummary;
+  capturedAt: string;
+}): AdminAnalyticsSnapshot {
+  return {
+    capturedAt: input.capturedAt,
+    status: input.summary.status,
+    scope: "local_explicit_inputs_only",
+    signalCount: input.summary.signalCount,
+    healthySignals: input.summary.healthySignals,
+    warningSignals: input.summary.warningSignals,
+    blockedSignals: input.summary.blockedSignals,
+    noDataSignals: input.summary.noDataSignals,
+    governanceEventCount: input.summary.governanceEventCount,
+    permissionViolationCount: input.summary.permissionViolationCount,
+    highSeverityViolationCount: input.summary.highSeverityViolationCount
+  };
+}
+
+export function createAdminAnalyticsHistorySummary(input: {
+  snapshots: AdminAnalyticsSnapshot[];
+}): AdminAnalyticsHistorySummary {
+  const snapshots = sortSnapshots(input.snapshots);
+  const [latest, previous] = snapshots;
+  let trend: AdminAnalyticsTrend = "no_history";
+
+  if (latest) {
+    if (latest.status === "blocked") {
+      trend = "blocked";
+    } else if (!previous) {
+      trend = "stable";
+    } else {
+      const latestScore = analyticsScore(latest.status);
+      const previousScore = analyticsScore(previous.status);
+
+      trend =
+        latestScore > previousScore
+          ? "improving"
+          : latestScore < previousScore
+            ? "regressing"
+            : "stable";
+    }
+  }
+
+  return {
+    trend,
+    snapshotCount: snapshots.length,
+    latestStatus: latest?.status ?? "none",
+    previousStatus: previous?.status ?? "none",
+    latestCapturedAt: latest?.capturedAt ?? null,
+    localOnlySnapshotCount: snapshots.filter(
+      (snapshot) => snapshot.scope === "local_explicit_inputs_only"
+    ).length,
+    blockedSnapshotCount: snapshots.filter(
+      (snapshot) => snapshot.status === "blocked"
+    ).length
   };
 }

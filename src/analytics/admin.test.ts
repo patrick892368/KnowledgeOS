@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { createAdminAnalyticsSummary } from "./admin";
+import {
+  createAdminAnalyticsHistorySummary,
+  createAdminAnalyticsSnapshot,
+  createAdminAnalyticsSummary
+} from "./admin";
 
 describe("createAdminAnalyticsSummary", () => {
   it("returns no-data when all analytics inputs are missing or empty", () => {
@@ -97,6 +101,97 @@ describe("createAdminAnalyticsSummary", () => {
       status: "blocked",
       blockedSignals: 3,
       highSeverityViolationCount: 1
+    });
+  });
+});
+
+describe("createAdminAnalyticsHistorySummary", () => {
+  it("returns no-history state without snapshots", () => {
+    expect(
+      createAdminAnalyticsHistorySummary({
+        snapshots: []
+      })
+    ).toEqual({
+      trend: "no_history",
+      snapshotCount: 0,
+      latestStatus: "none",
+      previousStatus: "none",
+      latestCapturedAt: null,
+      localOnlySnapshotCount: 0,
+      blockedSnapshotCount: 0
+    });
+  });
+
+  it("detects improving analytics from explicit local snapshots", () => {
+    const warning = createAdminAnalyticsSnapshot({
+      summary: createAdminAnalyticsSummary({
+        retrievalQuality: "insufficient_context",
+        sourceQuality: "healthy",
+        sourceFreshness: "fresh",
+        connectorReliability: "healthy",
+        workflowMetrics: "healthy",
+        operationalReliability: "warning",
+        governance: {
+          auditEventCount: 2
+        }
+      }),
+      capturedAt: "2026-07-10T00:00:00.000Z"
+    });
+    const healthy = createAdminAnalyticsSnapshot({
+      summary: createAdminAnalyticsSummary({
+        retrievalQuality: "healthy",
+        sourceQuality: "healthy",
+        sourceFreshness: "fresh",
+        connectorReliability: "healthy",
+        workflowMetrics: "healthy",
+        operationalReliability: "healthy",
+        governance: {
+          auditEventCount: 4
+        }
+      }),
+      capturedAt: "2026-07-10T01:00:00.000Z"
+    });
+
+    expect(
+      createAdminAnalyticsHistorySummary({
+        snapshots: [healthy, warning]
+      })
+    ).toMatchObject({
+      trend: "improving",
+      latestStatus: "healthy",
+      previousStatus: "warning",
+      localOnlySnapshotCount: 2,
+      blockedSnapshotCount: 0
+    });
+  });
+
+  it("keeps blocked history explicit when the latest snapshot is blocked", () => {
+    const blocked = createAdminAnalyticsSnapshot({
+      summary: createAdminAnalyticsSummary({
+        retrievalQuality: "needs_review",
+        sourceQuality: "healthy",
+        sourceFreshness: "fresh",
+        connectorReliability: "healthy",
+        workflowMetrics: "healthy",
+        operationalReliability: "blocked",
+        governance: {
+          auditEventCount: 3,
+          permissionViolationCount: 1,
+          highSeverityViolationCount: 1
+        }
+      }),
+      capturedAt: "2026-07-10T02:00:00.000Z"
+    });
+
+    expect(
+      createAdminAnalyticsHistorySummary({
+        snapshots: [blocked]
+      })
+    ).toMatchObject({
+      trend: "blocked",
+      latestStatus: "blocked",
+      blockedSnapshotCount: 1,
+      localOnlySnapshotCount: 1
     });
   });
 });
