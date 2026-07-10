@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 
 import { and, desc, eq } from "drizzle-orm";
 
@@ -11,6 +11,7 @@ import {
   type InvitationPlan,
   type InvitationPlanPayload
 } from "@/invitations/lifecycle";
+import { hashInvitationToken } from "@/invitations/tokens";
 
 import type { Database } from "./client";
 import { auditEvents, invitations } from "./schema";
@@ -53,9 +54,7 @@ const invitationSelection = {
   revokedAt: invitations.revokedAt
 };
 
-export function hashInvitationToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex");
-}
+export { hashInvitationToken } from "@/invitations/tokens";
 
 function createInvitationTokenHash(): string {
   return hashInvitationToken(randomBytes(32).toString("base64url"));

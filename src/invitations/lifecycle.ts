@@ -14,6 +14,10 @@ export type InvitationLifecycleErrorCode =
   | "invalid_payload"
   | "invalid_email"
   | "invalid_role"
+  | "invalid_token"
+  | "expired_invitation"
+  | "revoked_invitation"
+  | "accepted_invitation"
   | "forbidden"
   | "not_found"
   | "database_unavailable";
@@ -27,6 +31,10 @@ export class InvitationLifecycleError extends Error {
         ? 403
         : code === "not_found"
           ? 404
+          : code === "expired_invitation" ||
+              code === "revoked_invitation" ||
+              code === "accepted_invitation"
+            ? 410
           : code === "database_unavailable"
             ? 503
             : 400
@@ -66,7 +74,7 @@ export function canPlanInvitations(role: MembershipRole): boolean {
   return role === "owner" || role === "admin";
 }
 
-function normalizeEmail(value: string): string {
+export function normalizeInvitationEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
@@ -74,7 +82,7 @@ function readTrimmedString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function isValidEmail(value: string): boolean {
+export function isValidInvitationEmail(value: string): boolean {
   return (
     value.length <= 320 &&
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
@@ -115,14 +123,16 @@ export function parseInvitationPlanPayload(
     Record<"email" | "role" | "organizationId" | "expiresInDays", unknown>
   >;
   const email =
-    typeof candidate.email === "string" ? normalizeEmail(candidate.email) : "";
+    typeof candidate.email === "string"
+      ? normalizeInvitationEmail(candidate.email)
+      : "";
   const role = typeof candidate.role === "string" ? candidate.role.trim() : "";
   const organizationId =
     typeof candidate.organizationId === "string"
       ? candidate.organizationId.trim()
       : undefined;
 
-  if (!isValidEmail(email)) {
+  if (!isValidInvitationEmail(email)) {
     throw new InvitationLifecycleError(
       "invalid_email",
       "email must be a valid address."
