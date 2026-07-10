@@ -205,6 +205,7 @@ a {
 .data-panel,
 .identity-panel,
 .membership-panel,
+.invitation-panel,
 .audit-panel,
 .violation-panel,
 .permission-grant-panel,
@@ -522,11 +523,15 @@ button {
   overflow-wrap: anywhere;
 }
 
+.invitation-list,
 .permission-grant-list {
   display: grid;
   gap: 10px;
 }
 
+.invitation-list-header,
+.invitation-row,
+.invitation-row-meta,
 .permission-grant-list-header,
 .permission-grant-row,
 .permission-grant-row-meta {
@@ -535,29 +540,36 @@ button {
   gap: 10px;
 }
 
+.invitation-list-header,
+.invitation-row,
 .permission-grant-list-header,
 .permission-grant-row {
   justify-content: space-between;
 }
 
+.invitation-list-header,
 .permission-grant-list-header {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 800;
 }
 
+.invitation-row,
 .permission-grant-row {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
 }
 
+.invitation-row-main,
 .permission-grant-row-main {
   display: grid;
   gap: 5px;
   min-width: 0;
 }
 
+.invitation-row-main span,
+.invitation-row-meta,
 .permission-grant-row-main span,
 .permission-grant-row-meta {
   color: var(--text-muted);
@@ -565,11 +577,13 @@ button {
   font-weight: 700;
 }
 
+.invitation-row-main strong,
 .permission-grant-row-main strong {
   font-size: 13px;
   overflow-wrap: anywhere;
 }
 
+.invitation-row-meta,
 .permission-grant-row-meta {
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -1216,6 +1230,7 @@ button {
   .invitation-form,
   .invitation-actions,
   .invitation-output,
+  .invitation-row,
   .permission-grant-form,
   .permission-grant-actions,
   .permission-grant-output,
@@ -1227,6 +1242,8 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .invitation-row,
+  .invitation-row-meta,
   .permission-grant-row,
   .permission-grant-row-meta {
     display: grid;

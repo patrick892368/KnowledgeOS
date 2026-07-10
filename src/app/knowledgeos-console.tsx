@@ -93,15 +93,21 @@ type ManagedAuditEvent = {
 };
 
 type InvitationRole = Exclude<MembershipRole, "owner">;
+type InvitationStatus = "pending" | "accepted" | "revoked" | "expired";
 
-type InvitationResult = {
+type ManagedInvitation = {
   id: string;
   organizationId: string;
   email: string;
   role: InvitationRole;
-  status: "pending";
+  status: InvitationStatus;
   createdAt: string;
+  updatedAt?: string;
   expiresAt: string;
+  revokedAt?: string;
+};
+
+type InvitationResult = ManagedInvitation & {
   mode: "planned" | "created" | "existing";
   auditAction?: string;
 };
@@ -173,6 +179,18 @@ function upsertPermissionGrant(
   const withoutGrant = grants.filter((item) => item.id !== grant.id);
 
   return [grant, ...withoutGrant].sort(
+    (left, right) =>
+      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+  );
+}
+
+function upsertInvitation(
+  invitations: ManagedInvitation[],
+  invitation: ManagedInvitation
+) {
+  const withoutInvitation = invitations.filter((item) => item.id !== invitation.id);
+
+  return [invitation, ...withoutInvitation].sort(
     (left, right) =>
       new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
   );
@@ -274,6 +292,9 @@ export function KnowledgeOSConsole() {
   const [invitationExpiresInDays, setInvitationExpiresInDays] = useState(7);
   const [invitationResult, setInvitationResult] =
     useState<InvitationResult | null>(null);
+  const [invitations, setInvitations] = useState<ManagedInvitation[]>([]);
+  const [pendingRevokeInvitationId, setPendingRevokeInvitationId] =
+    useState<string | null>(null);
   const [auditEvents, setAuditEvents] = useState<ManagedAuditEvent[]>([]);
   const [permissionViolations, setPermissionViolations] = useState<
     PermissionViolationSignal[]
@@ -307,6 +328,8 @@ export function KnowledgeOSConsole() {
     | "members"
     | "member-role"
     | "invitation"
+    | "invitations"
+    | "invitation-revoke"
     | "audit-events"
     | "permission-violations"
     | "permission-grant"
@@ -372,6 +395,8 @@ export function KnowledgeOSConsole() {
 
     if (!session || !isMembershipManager(session.role)) {
       setMemberships([]);
+      setInvitations([]);
+      setPendingRevokeInvitationId(null);
       setMemberRoleEdits({});
       return;
     }
@@ -665,6 +690,9 @@ export function KnowledgeOSConsole() {
         mode: payload.mode ?? "planned",
         auditAction: payload.auditEvent?.action
       });
+      if (persist) {
+        setInvitations((current) => upsertInvitation(current, payload.invitation));
+      }
     } catch (caughtError) {
       setInvitationResult(null);
       setError(
@@ -685,6 +713,94 @@ export function KnowledgeOSConsole() {
 
   function persistInvitationFromUi() {
     void submitInvitation(true);
+  }
+
+  async function loadInvitations() {
+    if (!canManageCurrentMemberships) {
+      setInvitations([]);
+      setError("Owner or admin signed session is required.");
+      return;
+    }
+
+    setBusyAction("invitations");
+    setPendingRevokeInvitationId(null);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/invitations", {
+        method: "GET",
+        credentials: "same-origin"
+      });
+      const payload = await readApiResponse<{
+        invitations: ManagedInvitation[];
+      }>(response);
+
+      setInvitations(payload.invitations);
+    } catch (caughtError) {
+      setInvitations([]);
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Invitation loading failed."
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function revokeInvitation(invitationId: string) {
+    if (!canManageCurrentMemberships) {
+      setError("Owner or admin signed session is required.");
+      return;
+    }
+
+    setBusyAction("invitation-revoke");
+    setError(null);
+
+    try {
+      const payload = await readApiResponse<{
+        invitation: ManagedInvitation;
+      }>(
+        await fetch("/api/admin/invitations", {
+          method: "DELETE",
+          credentials: "same-origin",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            invitationId
+          })
+        })
+      );
+
+      setInvitations((current) => upsertInvitation(current, payload.invitation));
+      setInvitationResult((current) =>
+        current?.id === payload.invitation.id
+          ? {
+              ...current,
+              ...payload.invitation
+            }
+          : current
+      );
+      setPendingRevokeInvitationId(null);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Invitation revocation failed."
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  function requestInvitationRevoke(invitationId: string) {
+    if (pendingRevokeInvitationId !== invitationId) {
+      setPendingRevokeInvitationId(invitationId);
+      return;
+    }
+
+    void revokeInvitation(invitationId);
   }
 
   async function submitPermissionGrant(persist: boolean) {
@@ -1301,6 +1417,15 @@ export function KnowledgeOSConsole() {
                 <Mail size={14} />
                 Token-safe persistence
               </span>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={loadInvitations}
+                disabled={busyAction !== null || !canManageCurrentMemberships}
+              >
+                <RefreshCw size={15} />
+                {busyAction === "invitations" ? "Refreshing" : "Refresh"}
+              </button>
             </div>
 
             <div className="invitation-form">
@@ -1396,6 +1521,53 @@ export function KnowledgeOSConsole() {
             ) : (
               <div className="empty-state">No invitation planned</div>
             )}
+
+            <div className="invitation-list">
+              <div className="invitation-list-header">
+                <span>Durable invitations</span>
+                <span className="count-pill">{invitations.length} invites</span>
+              </div>
+              {invitations.map((invitation) => (
+                <article className="invitation-row" key={invitation.id}>
+                  <div className="invitation-row-main">
+                    <span>{invitation.email}</span>
+                    <strong>
+                      {invitation.role} | {formatStatus(invitation.status)}
+                    </strong>
+                  </div>
+                  <div className="invitation-row-meta">
+                    <span>Expires {formatActivityTime(invitation.expiresAt)}</span>
+                    {invitation.revokedAt ? (
+                      <small>
+                        Revoked {formatActivityTime(invitation.revokedAt)}
+                      </small>
+                    ) : (
+                      <small>Created {formatActivityTime(invitation.createdAt)}</small>
+                    )}
+                  </div>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    onClick={() => requestInvitationRevoke(invitation.id)}
+                    disabled={
+                      busyAction !== null ||
+                      !canManageCurrentMemberships ||
+                      invitation.status !== "pending"
+                    }
+                  >
+                    <Trash2 size={15} />
+                    {invitation.status !== "pending"
+                      ? formatStatus(invitation.status)
+                      : pendingRevokeInvitationId === invitation.id
+                        ? "Confirm"
+                        : "Revoke"}
+                  </button>
+                </article>
+              ))}
+              {invitations.length === 0 ? (
+                <div className="empty-state">No durable invitations loaded</div>
+              ) : null}
+            </div>
           </section>
 
           <section className="membership-panel">
@@ -2554,9 +2726,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-043 invitation persistence UI</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-044 invitation revoke API</span>
+                </div>
                 <div className="task-row in-progress">
                   <Activity size={16} />
-                  <span>T-044 invitation revoke API</span>
+                  <span>T-045 invitation revoke UI</span>
                 </div>
               </div>
             </div>
