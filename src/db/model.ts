@@ -3,6 +3,14 @@ export const embeddingDimensions = 1536 as const;
 export const membershipRoles = ["owner", "admin", "editor", "viewer"] as const;
 export type MembershipRole = (typeof membershipRoles)[number];
 
+export const invitationStatuses = [
+  "pending",
+  "accepted",
+  "revoked",
+  "expired"
+] as const;
+export type InvitationStatus = (typeof invitationStatuses)[number];
+
 export const sourceTypes = [
   "document",
   "url",
@@ -64,6 +72,7 @@ export const databaseTableNames = [
   "organizations",
   "users",
   "memberships",
+  "invitations",
   "sources",
   "documents",
   "chunks",

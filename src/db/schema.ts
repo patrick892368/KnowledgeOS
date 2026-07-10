@@ -17,6 +17,7 @@ import {
   databaseTableNames,
   documentStatuses,
   embeddingDimensions,
+  invitationStatuses,
   membershipRoles,
   permissionActions,
   permissionResourceTypes,
@@ -43,6 +44,10 @@ const knowledgeos = pgSchema("knowledgeos");
 export const membershipRoleEnum = knowledgeos.enum(
   "membership_role",
   membershipRoles
+);
+export const invitationStatusEnum = knowledgeos.enum(
+  "invitation_status",
+  invitationStatuses
 );
 export const sourceTypeEnum = knowledgeos.enum("source_type", sourceTypes);
 export const sourceStatusEnum = knowledgeos.enum(
@@ -109,6 +114,38 @@ export const memberships = knowledgeos.table(
       table.userId
     ),
     index("memberships_user_idx").on(table.userId)
+  ]
+);
+
+export const invitations = knowledgeos.table(
+  "invitations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    email: varchar("email", { length: 320 }).notNull(),
+    role: membershipRoleEnum("role").notNull(),
+    status: invitationStatusEnum("status").default("pending").notNull(),
+    tokenHash: varchar("token_hash", { length: 128 }).notNull(),
+    invitedBy: uuid("invited_by").references(() => users.id, {
+      onDelete: "set null"
+    }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<JsonObject>().default({}).notNull(),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("invitations_org_email_status_uidx").on(
+      table.organizationId,
+      table.email,
+      table.status
+    ),
+    index("invitations_org_status_idx").on(table.organizationId, table.status),
+    check("invitations_email_not_empty", sql`${table.email} <> ''`),
+    check("invitations_token_hash_not_empty", sql`${table.tokenHash} <> ''`)
   ]
 );
 
@@ -363,6 +400,7 @@ export const auditEvents = knowledgeos.table(
 
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
+  invitations: many(invitations),
   sources: many(sources),
   documents: many(documents),
   workflows: many(workflows),
@@ -372,6 +410,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
 
 export const usersRelations = relations(users, ({ many }) => ({
   memberships: many(memberships),
+  invitations: many(invitations),
   createdSources: many(sources),
   workflowRuns: many(workflowRuns),
   auditEvents: many(auditEvents)
@@ -384,6 +423,17 @@ export const membershipsRelations = relations(memberships, ({ one }) => ({
   }),
   user: one(users, {
     fields: [memberships.userId],
+    references: [users.id]
+  })
+}));
+
+export const invitationsRelations = relations(invitations, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [invitations.organizationId],
+    references: [organizations.id]
+  }),
+  inviter: one(users, {
+    fields: [invitations.invitedBy],
     references: [users.id]
   })
 }));
@@ -490,6 +540,7 @@ export const schemaTables = {
   organizations,
   users,
   memberships,
+  invitations,
   sources,
   documents,
   chunks,
@@ -504,6 +555,7 @@ export const schemaTables = {
 export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
+export type Invitation = typeof invitations.$inferSelect;
 export type Source = typeof sources.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type Chunk = typeof chunks.$inferSelect;

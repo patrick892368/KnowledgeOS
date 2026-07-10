@@ -15,14 +15,21 @@ export type InvitationLifecycleErrorCode =
   | "invalid_email"
   | "invalid_role"
   | "forbidden"
-  | "not_found";
+  | "not_found"
+  | "database_unavailable";
 
 export class InvitationLifecycleError extends Error {
   constructor(
     public readonly code: InvitationLifecycleErrorCode,
     message: string,
     public readonly status =
-      code === "forbidden" ? 403 : code === "not_found" ? 404 : 400
+      code === "forbidden"
+        ? 403
+        : code === "not_found"
+          ? 404
+          : code === "database_unavailable"
+            ? 503
+            : 400
   ) {
     super(message);
     this.name = "InvitationLifecycleError";
@@ -127,6 +134,30 @@ export function parseInvitationPlanPayload(
     organizationId: organizationId || undefined,
     expiresInDays: parseExpirationDays(candidate.expiresInDays)
   };
+}
+
+export function parseInvitationPersistFlag(payload: unknown): boolean {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    throw new InvitationLifecycleError(
+      "invalid_payload",
+      "Request body must be an object."
+    );
+  }
+
+  const candidate = payload as Partial<Record<"persist", unknown>>;
+
+  if (candidate.persist === undefined) {
+    return false;
+  }
+
+  if (typeof candidate.persist !== "boolean") {
+    throw new InvitationLifecycleError(
+      "invalid_payload",
+      "persist must be a boolean when provided."
+    );
+  }
+
+  return candidate.persist;
 }
 
 export function createInvitationPlan(input: {

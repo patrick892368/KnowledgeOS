@@ -4,6 +4,7 @@ import { databaseTableNames, embeddingDimensions } from "./model";
 import {
   documentStatusEnum,
   embeddings,
+  invitationStatusEnum,
   membershipRoleEnum,
   permissionActionEnum,
   permissionResourceTypeEnum,
@@ -28,6 +29,12 @@ describe("database schema", () => {
       "admin",
       "editor",
       "viewer"
+    ]);
+    expect(invitationStatusEnum.enumValues).toEqual([
+      "pending",
+      "accepted",
+      "revoked",
+      "expired"
     ]);
     expect(sourceTypeEnum.enumValues).toContain("repository");
     expect(sourceStatusEnum.enumValues).toContain("indexing");

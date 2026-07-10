@@ -4,6 +4,7 @@ import {
   canRoleManagePermissionGrants,
   databaseTableNames,
   embeddingDimensions,
+  invitationStatuses,
   isMembershipRole,
   isTerminalWorkflowRunStatus,
   membershipRoles,
@@ -18,6 +19,7 @@ describe("database model constants", () => {
       "organizations",
       "users",
       "memberships",
+      "invitations",
       "sources",
       "documents",
       "chunks",
@@ -34,6 +36,15 @@ describe("database model constants", () => {
     expect(permissionSubjectTypes).toEqual(["user", "membership", "role"]);
     expect(permissionResourceTypes).toContain("document");
     expect(permissionActions).toEqual(["read", "write", "admin"]);
+  });
+
+  it("defines invitation lifecycle statuses", () => {
+    expect(invitationStatuses).toEqual([
+      "pending",
+      "accepted",
+      "revoked",
+      "expired"
+    ]);
   });
 
   it("keeps owner and admin as permission administrators", () => {

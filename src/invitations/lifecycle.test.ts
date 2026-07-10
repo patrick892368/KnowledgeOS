@@ -6,6 +6,7 @@ import {
   canPlanInvitations,
   createInvitationPlan,
   InvitationLifecycleError,
+  parseInvitationPersistFlag,
   parseInvitationPlanPayload
 } from "./lifecycle";
 
@@ -62,6 +63,22 @@ describe("parseInvitationPlanPayload", () => {
         role: "superadmin"
       })
     ).toThrow("role must be one of owner, admin, editor, or viewer.");
+  });
+});
+
+describe("parseInvitationPersistFlag", () => {
+  it("defaults to plan-only mode", () => {
+    expect(parseInvitationPersistFlag({})).toBe(false);
+  });
+
+  it("accepts boolean persistence intent", () => {
+    expect(parseInvitationPersistFlag({ persist: true })).toBe(true);
+  });
+
+  it("rejects invalid persistence flags", () => {
+    expect(() => parseInvitationPersistFlag({ persist: "yes" })).toThrow(
+      "persist must be a boolean when provided."
+    );
   });
 });
 
