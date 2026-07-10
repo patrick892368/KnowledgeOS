@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createReleaseReadinessHistorySummary,
+  createReleaseReadinessSnapshot,
   createReleaseReadinessSummary,
   type ReleaseReadinessCheck
 } from "./release-readiness";
@@ -88,5 +90,77 @@ describe("createReleaseReadinessSummary", () => {
       "Tests failed",
       "High risk: Review Gate failed."
     ]);
+  });
+});
+
+describe("createReleaseReadinessHistorySummary", () => {
+  it("returns no-history state without snapshots", () => {
+    expect(
+      createReleaseReadinessHistorySummary({
+        snapshots: []
+      })
+    ).toEqual({
+      trend: "no_history",
+      snapshotCount: 0,
+      latestStatus: "none",
+      previousStatus: "none",
+      latestCapturedAt: null,
+      localOnlySnapshotCount: 0,
+      blockedSnapshotCount: 0
+    });
+  });
+
+  it("detects improving readiness from explicit local snapshots", () => {
+    const warning = createReleaseReadinessSnapshot({
+      summary: createReleaseReadinessSummary({
+        checks: [
+          ...passingChecks.slice(0, 5),
+          { label: "Documentation", status: "not_run" }
+        ]
+      }),
+      capturedAt: "2026-07-10T00:00:00.000Z"
+    });
+    const ready = createReleaseReadinessSnapshot({
+      summary: createReleaseReadinessSummary({
+        checks: passingChecks
+      }),
+      capturedAt: "2026-07-10T01:00:00.000Z"
+    });
+
+    expect(
+      createReleaseReadinessHistorySummary({
+        snapshots: [warning, ready]
+      })
+    ).toMatchObject({
+      trend: "improving",
+      latestStatus: "ready",
+      previousStatus: "warning",
+      localOnlySnapshotCount: 2,
+      blockedSnapshotCount: 0
+    });
+  });
+
+  it("keeps blocked history explicit when the latest snapshot is blocked", () => {
+    const blocked = createReleaseReadinessSnapshot({
+      summary: createReleaseReadinessSummary({
+        checks: [
+          ...passingChecks.slice(0, 4),
+          { label: "Review Gate", status: "fail" },
+          { label: "Documentation", status: "pass" }
+        ]
+      }),
+      capturedAt: "2026-07-10T02:00:00.000Z"
+    });
+
+    expect(
+      createReleaseReadinessHistorySummary({
+        snapshots: [blocked]
+      })
+    ).toMatchObject({
+      trend: "blocked",
+      latestStatus: "blocked",
+      blockedSnapshotCount: 1,
+      localOnlySnapshotCount: 1
+    });
   });
 });
