@@ -33,6 +33,7 @@ import {
 import type { NormalizedIngestionResult } from "@/ingestion/types";
 import { createConnectorReliabilitySummary } from "@/quality/connector-reliability";
 import { createSourceFreshnessSummary } from "@/quality/freshness";
+import { createOperationalReliabilitySummary } from "@/quality/operational-reliability";
 import {
   createReleaseReadinessHistorySummary,
   createReleaseReadinessSnapshot,
@@ -446,6 +447,23 @@ export function KnowledgeOSConsole() {
       snapshots: [previous, latest]
     });
   }, [releaseReadiness]);
+  const operationalReliability = useMemo(
+    () =>
+      createOperationalReliabilitySummary({
+        sourceQuality: sourceQuality.status,
+        sourceFreshness: sourceFreshness.status,
+        connectorReliability: connectorReliability.status,
+        workflowMetrics: workflowMetrics.status,
+        releaseReadiness: releaseReadiness.status
+      }),
+    [
+      connectorReliability.status,
+      releaseReadiness.status,
+      sourceFreshness.status,
+      sourceQuality.status,
+      workflowMetrics.status
+    ]
+  );
 
   useEffect(() => {
     void loadCurrentSession({ quiet: true });
@@ -2801,6 +2819,71 @@ export function KnowledgeOSConsole() {
             </div>
           </section>
 
+          <section className="operational-reliability-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Reliability</span>
+                <h2>Operational reliability</h2>
+              </div>
+              <span
+                className={`verification-badge status-${operationalReliability.status}`}
+              >
+                {formatStatus(operationalReliability.status)}
+              </span>
+            </div>
+
+            <div className="quality-metric-grid">
+              <div className="quality-metric">
+                <span>Signals</span>
+                <strong>{operationalReliability.signalCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Healthy</span>
+                <strong>{operationalReliability.healthySignals}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Warnings</span>
+                <strong>{operationalReliability.warningSignals}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Blocked</span>
+                <strong>{operationalReliability.blockedSignals}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>No data</span>
+                <strong>{operationalReliability.noDataSignals}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Scope</span>
+                <strong>Aggregate</strong>
+              </div>
+            </div>
+
+            <div className="release-readiness-strip">
+              <span className="status-pill">
+                <ShieldCheck size={14} />
+                Aggregate safe summaries
+              </span>
+              <span className="status-pill">
+                <Database size={14} />
+                No raw source content
+              </span>
+            </div>
+
+            <div className="release-check-list">
+              {operationalReliability.signals.map((signal) => (
+                <article
+                  className={`release-check-row status-${signal.status}`}
+                  key={signal.label}
+                >
+                  <span>{signal.label}</span>
+                  <strong>{formatStatus(signal.status)}</strong>
+                  <small>{formatStatus(signal.sourceStatus)}</small>
+                </article>
+              ))}
+            </div>
+          </section>
+
           <section className="lower-grid">
             <div className="data-panel">
               <div className="panel-header">
@@ -2989,9 +3072,17 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-050 release readiness history</span>
                 </div>
-                <div className="task-row in-progress">
-                  <Activity size={16} />
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
                   <span>T-051 release readiness history UI</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-052 operational reliability summary</span>
+                </div>
+                <div className="task-row active">
+                  <Activity size={16} />
+                  <span>T-053 operational reliability UI</span>
                 </div>
               </div>
             </div>
