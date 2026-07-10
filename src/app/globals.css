@@ -216,7 +216,8 @@ a {
 .connector-reliability-panel,
 .workflow-panel,
 .workflow-metrics-panel,
-.release-readiness-panel {
+.release-readiness-panel,
+.release-history-panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -686,7 +687,8 @@ button {
 
 .workflow-panel,
 .workflow-metrics-panel,
-.release-readiness-panel {
+.release-readiness-panel,
+.release-history-panel {
   align-content: start;
 }
 
@@ -879,7 +881,9 @@ button {
 
 .verification-badge.status-supported,
 .verification-badge.status-fresh,
-.verification-badge.status-ready {
+.verification-badge.status-ready,
+.verification-badge.status-improving,
+.verification-badge.status-stable {
   background: #e7f8ee;
   color: var(--success);
 }
@@ -896,14 +900,16 @@ button {
 .verification-badge.status-degraded,
 .verification-badge.status-needs_attention,
 .verification-badge.status-review_heavy,
-.verification-badge.status-warning {
+.verification-badge.status-warning,
+.verification-badge.status-no_history {
   background: #fff7e6;
   color: var(--warning);
 }
 
 .verification-badge.status-unsupported,
 .verification-badge.status-needs_review,
-.verification-badge.status-blocked {
+.verification-badge.status-blocked,
+.verification-badge.status-regressing {
   background: #fff1f0;
   color: var(--danger);
 }
@@ -913,7 +919,8 @@ button {
 .source-freshness-panel,
 .connector-reliability-panel,
 .workflow-metrics-panel,
-.release-readiness-panel {
+.release-readiness-panel,
+.release-history-panel {
   align-content: start;
 }
 
@@ -1179,7 +1186,9 @@ button {
 
   .verification-badge.status-supported,
   .verification-badge.status-fresh,
-  .verification-badge.status-ready {
+  .verification-badge.status-ready,
+  .verification-badge.status-improving,
+  .verification-badge.status-stable {
     background: #173b27;
   }
 
@@ -1194,13 +1203,15 @@ button {
   .verification-badge.status-degraded,
   .verification-badge.status-needs_attention,
   .verification-badge.status-review_heavy,
-  .verification-badge.status-warning {
+  .verification-badge.status-warning,
+  .verification-badge.status-no_history {
     background: #3b2d12;
   }
 
   .verification-badge.status-unsupported,
   .verification-badge.status-needs_review,
-  .verification-badge.status-blocked {
+  .verification-badge.status-blocked,
+  .verification-badge.status-regressing {
     background: #3d1f1f;
   }
 

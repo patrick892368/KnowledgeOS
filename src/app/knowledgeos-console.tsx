@@ -33,7 +33,11 @@ import {
 import type { NormalizedIngestionResult } from "@/ingestion/types";
 import { createConnectorReliabilitySummary } from "@/quality/connector-reliability";
 import { createSourceFreshnessSummary } from "@/quality/freshness";
-import { createReleaseReadinessSummary } from "@/quality/release-readiness";
+import {
+  createReleaseReadinessHistorySummary,
+  createReleaseReadinessSnapshot,
+  createReleaseReadinessSummary
+} from "@/quality/release-readiness";
 import { createRetrievalQualitySummary } from "@/quality/retrieval";
 import { createSourceQualitySummary } from "@/quality/source";
 import type { LocalSearchResponse } from "@/search/types";
@@ -413,6 +417,35 @@ export function KnowledgeOSConsole() {
       }),
     []
   );
+  const releaseReadinessHistory = useMemo(() => {
+    const previous = createReleaseReadinessSnapshot({
+      summary: createReleaseReadinessSummary({
+        checks: [
+          { label: "Build", status: "pass" },
+          { label: "Lint", status: "pass" },
+          { label: "Type Check", status: "pass" },
+          { label: "Tests", status: "fail" },
+          { label: "Review Gate", status: "warning" },
+          { label: "Documentation", status: "not_run" }
+        ],
+        knownRisks: [
+          {
+            severity: "high",
+            description: "Review Gate had not passed."
+          }
+        ]
+      }),
+      capturedAt: "2026-07-10T00:00:00.000Z"
+    });
+    const latest = createReleaseReadinessSnapshot({
+      summary: releaseReadiness,
+      capturedAt: "2026-07-10T01:00:00.000Z"
+    });
+
+    return createReleaseReadinessHistorySummary({
+      snapshots: [previous, latest]
+    });
+  }, [releaseReadiness]);
 
   useEffect(() => {
     void loadCurrentSession({ quiet: true });
@@ -2716,6 +2749,58 @@ export function KnowledgeOSConsole() {
             </div>
           </section>
 
+          <section className="release-history-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Release</span>
+                <h2>Readiness history</h2>
+              </div>
+              <span
+                className={`verification-badge status-${releaseReadinessHistory.trend}`}
+              >
+                {formatStatus(releaseReadinessHistory.trend)}
+              </span>
+            </div>
+
+            <div className="quality-metric-grid">
+              <div className="quality-metric">
+                <span>Snapshots</span>
+                <strong>{releaseReadinessHistory.snapshotCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Latest</span>
+                <strong>{formatStatus(releaseReadinessHistory.latestStatus)}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Previous</span>
+                <strong>
+                  {formatStatus(releaseReadinessHistory.previousStatus)}
+                </strong>
+              </div>
+              <div className="quality-metric">
+                <span>Blocked</span>
+                <strong>{releaseReadinessHistory.blockedSnapshotCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Local-only</span>
+                <strong>{releaseReadinessHistory.localOnlySnapshotCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Latest at</span>
+                <strong>
+                  {releaseReadinessHistory.latestCapturedAt
+                    ? formatActivityTime(releaseReadinessHistory.latestCapturedAt)
+                    : "None"}
+                </strong>
+              </div>
+            </div>
+
+            <div className="quality-footnote">
+              <span>Explicit snapshots only</span>
+              <span>Remote CI history not claimed</span>
+            </div>
+          </section>
+
           <section className="lower-grid">
             <div className="data-panel">
               <div className="panel-header">
@@ -2896,9 +2981,17 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-048 release readiness summary</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-049 release readiness UI</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-050 release readiness history</span>
+                </div>
                 <div className="task-row in-progress">
                   <Activity size={16} />
-                  <span>T-049 release readiness UI</span>
+                  <span>T-051 release readiness history UI</span>
                 </div>
               </div>
             </div>
