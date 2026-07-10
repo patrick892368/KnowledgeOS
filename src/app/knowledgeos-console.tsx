@@ -36,6 +36,7 @@ import {
   type ConnectorSyncMode
 } from "@/connectors/status";
 import type { NormalizedIngestionResult } from "@/ingestion/types";
+import { createInvitationReviewSummary } from "@/invitations/review";
 import { createConnectorReliabilitySummary } from "@/quality/connector-reliability";
 import { createSourceFreshnessSummary } from "@/quality/freshness";
 import { createOperationalReliabilitySummary } from "@/quality/operational-reliability";
@@ -624,6 +625,24 @@ export function KnowledgeOSConsole() {
         capturedAt: "2026-07-10T02:30:00.000Z"
       }),
     [adminAnalytics, session?.organizationId]
+  );
+  const invitationReviewSummary = useMemo(
+    () =>
+      createInvitationReviewSummary({
+        invitations: invitations.map((invitation) => ({
+          id: invitation.id,
+          email: invitation.email,
+          role: invitation.role,
+          status: invitation.status,
+          createdAt: new Date(invitation.createdAt),
+          expiresAt: new Date(invitation.expiresAt),
+          acceptedAt: invitation.acceptedAt
+            ? new Date(invitation.acceptedAt)
+            : null,
+          revokedAt: invitation.revokedAt ? new Date(invitation.revokedAt) : null
+        }))
+      }),
+    [invitations]
   );
 
   useEffect(() => {
@@ -2104,6 +2123,58 @@ export function KnowledgeOSConsole() {
               {invitations.length === 0 ? (
                 <div className="empty-state">No durable invitations loaded</div>
               ) : null}
+            </div>
+
+            <div className="invitation-review">
+              <div className="invitation-list-header">
+                <span>Expiration review</span>
+                <span className="count-pill">
+                  {invitationReviewSummary.resendReviewCount} resend reviews
+                </span>
+              </div>
+              <div className="invitation-review-grid">
+                <div>
+                  <span>Pending</span>
+                  <strong>{invitationReviewSummary.pendingCount}</strong>
+                </div>
+                <div>
+                  <span>Expiring soon</span>
+                  <strong>{invitationReviewSummary.expiringSoonCount}</strong>
+                </div>
+                <div>
+                  <span>Expired</span>
+                  <strong>{invitationReviewSummary.expiredCount}</strong>
+                </div>
+                <div>
+                  <span>Token exposure</span>
+                  <strong>{formatStatus(invitationReviewSummary.tokenExposure)}</strong>
+                </div>
+              </div>
+              <div className="invitation-review-list">
+                {invitationReviewSummary.reviews.map((review) => (
+                  <article
+                    className={`invitation-review-row status-${review.reviewState}`}
+                    key={review.id}
+                  >
+                    <div>
+                      <span>{review.email}</span>
+                      <small>
+                        {review.role} | {formatStatus(review.reviewState)} |{" "}
+                        {review.hoursUntilExpiration > 0
+                          ? `${review.hoursUntilExpiration}h left`
+                          : "expired"}
+                      </small>
+                    </div>
+                    <strong>{formatStatus(review.resendAction)}</strong>
+                    <small>{review.reason}</small>
+                  </article>
+                ))}
+                {invitationReviewSummary.reviews.length === 0 ? (
+                  <div className="empty-state">
+                    No invitations loaded for expiration review
+                  </div>
+                ) : null}
+              </div>
             </div>
           </section>
 
@@ -3865,9 +3936,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-065 invitation acceptance API</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-066 invitation acceptance UI</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-066 invitation acceptance UI</span>
+                  <span>T-067 invitation resend review</span>
                 </div>
               </div>
             </div>

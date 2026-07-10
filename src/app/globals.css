@@ -548,9 +548,43 @@ button {
 }
 
 .invitation-list,
-.permission-grant-list {
+.permission-grant-list,
+.invitation-review,
+.invitation-review-list {
   display: grid;
   gap: 10px;
+}
+
+.invitation-review {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.invitation-review-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.invitation-review-grid div {
+  background: var(--surface-muted);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.invitation-review-grid span,
+.invitation-review-row small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.invitation-review-grid strong {
+  font-size: 18px;
+  overflow-wrap: anywhere;
 }
 
 .invitation-list-header,
@@ -583,6 +617,53 @@ button {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
+}
+
+.invitation-review-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto minmax(180px, 1fr);
+  padding: 12px;
+}
+
+.invitation-review-row div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.invitation-review-row span {
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.invitation-review-row strong {
+  background: var(--surface-muted);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 5px 8px;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.invitation-review-row.status-expiring_soon strong,
+.invitation-review-row.status-expired strong {
+  background: #fff7e6;
+  color: var(--warning);
+}
+
+.invitation-review-row.status-revoked strong {
+  background: #fff1f0;
+  color: var(--danger);
+}
+
+.invitation-review-row.status-accepted strong {
+  background: #e7f8ee;
+  color: var(--success);
 }
 
 .invitation-row-main,
@@ -1251,6 +1332,19 @@ button {
   .violation-row.severity-high strong {
     background: #3d1f1f;
   }
+
+  .invitation-review-row.status-expiring_soon strong,
+  .invitation-review-row.status-expired strong {
+    background: #3b2d12;
+  }
+
+  .invitation-review-row.status-revoked strong {
+    background: #3d1f1f;
+  }
+
+  .invitation-review-row.status-accepted strong {
+    background: #173b27;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -1321,6 +1415,8 @@ button {
   .invitation-acceptance-form,
   .invitation-actions,
   .invitation-output,
+  .invitation-review-grid,
+  .invitation-review-row,
   .invitation-row,
   .permission-grant-form,
   .permission-grant-actions,
