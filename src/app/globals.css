@@ -480,6 +480,59 @@ button {
   overflow-wrap: anywhere;
 }
 
+.permission-grant-list {
+  display: grid;
+  gap: 10px;
+}
+
+.permission-grant-list-header,
+.permission-grant-row,
+.permission-grant-row-meta {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.permission-grant-list-header,
+.permission-grant-row {
+  justify-content: space-between;
+}
+
+.permission-grant-list-header {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.permission-grant-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.permission-grant-row-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.permission-grant-row-main span,
+.permission-grant-row-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.permission-grant-row-main strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.permission-grant-row-meta {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .audit-list,
 .violation-list {
   display: grid;
@@ -1120,11 +1173,18 @@ button {
   .permission-grant-form,
   .permission-grant-actions,
   .permission-grant-output,
+  .permission-grant-row,
   .audit-row,
   .violation-row,
   .membership-row {
     align-items: stretch;
     grid-template-columns: 1fr;
+  }
+
+  .permission-grant-row,
+  .permission-grant-row-meta {
+    display: grid;
+    justify-content: stretch;
   }
 
   .url-ingestion,

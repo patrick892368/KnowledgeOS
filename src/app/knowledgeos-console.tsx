@@ -14,6 +14,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  Trash2,
   Upload,
   UserCircle,
   Users
@@ -131,6 +132,10 @@ type PermissionGrantResult = PermissionGrantPlan & {
   auditAction?: string;
 };
 
+type ManagedPermissionGrant = PermissionGrantPlan & {
+  id: string;
+};
+
 const membershipRoles: MembershipRole[] = ["owner", "admin", "editor", "viewer"];
 const permissionSubjectTypes: PermissionGrantSubjectType[] = [
   "role",
@@ -144,6 +149,18 @@ const permissionResourceTypes: PermissionGrantResourceType[] = [
   "organization"
 ];
 const permissionActions: PermissionGrantAction[] = ["read", "write", "admin"];
+
+function upsertPermissionGrant(
+  grants: ManagedPermissionGrant[],
+  grant: ManagedPermissionGrant
+) {
+  const withoutGrant = grants.filter((item) => item.id !== grant.id);
+
+  return [grant, ...withoutGrant].sort(
+    (left, right) =>
+      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+  );
+}
 
 const developmentHeaders = {
   "content-type": "application/json",
@@ -247,6 +264,12 @@ export function KnowledgeOSConsole() {
   const [grantAction, setGrantAction] = useState<PermissionGrantAction>("read");
   const [permissionGrantPlan, setPermissionGrantPlan] =
     useState<PermissionGrantResult | null>(null);
+  const [permissionGrants, setPermissionGrants] = useState<
+    ManagedPermissionGrant[]
+  >([]);
+  const [pendingRevokeGrantId, setPendingRevokeGrantId] = useState<string | null>(
+    null
+  );
   const [memberRoleEdits, setMemberRoleEdits] = useState<
     Record<string, MembershipRole>
   >({});
@@ -263,6 +286,8 @@ export function KnowledgeOSConsole() {
     | "audit-events"
     | "permission-violations"
     | "permission-grant"
+    | "permission-grants"
+    | "permission-grant-revoke"
     | "workflow"
     | null
   >(null);
@@ -618,6 +643,16 @@ export function KnowledgeOSConsole() {
         mode: payload.mode ?? "planned",
         auditAction: payload.auditEvent?.action
       });
+      if (persist && payload.grant.id) {
+        const grantId = payload.grant.id;
+
+        setPermissionGrants((current) =>
+          upsertPermissionGrant(current, {
+            ...payload.grant,
+            id: grantId
+          })
+        );
+      }
     } catch (caughtError) {
       setPermissionGrantPlan(null);
       setError(
@@ -638,6 +673,91 @@ export function KnowledgeOSConsole() {
 
   function persistPermissionGrant() {
     void submitPermissionGrant(true);
+  }
+
+  async function loadPermissionGrants() {
+    if (!canManageCurrentMemberships) {
+      setPermissionGrants([]);
+      setError("Owner or admin signed session is required.");
+      return;
+    }
+
+    setBusyAction("permission-grants");
+    setPendingRevokeGrantId(null);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/permission-grants", {
+        method: "GET",
+        credentials: "same-origin"
+      });
+      const payload = await readApiResponse<{
+        grants: ManagedPermissionGrant[];
+      }>(response);
+
+      setPermissionGrants(payload.grants);
+    } catch (caughtError) {
+      setPermissionGrants([]);
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Permission grant loading failed."
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function revokePermissionGrant(grantId: string) {
+    if (!canManageCurrentMemberships) {
+      setError("Owner or admin signed session is required.");
+      return;
+    }
+
+    setBusyAction("permission-grant-revoke");
+    setError(null);
+
+    try {
+      await readApiResponse<{
+        grant: ManagedPermissionGrant;
+      }>(
+        await fetch("/api/admin/permission-grants", {
+          method: "DELETE",
+          credentials: "same-origin",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify({
+            grantId
+          })
+        })
+      );
+
+      setPermissionGrants((current) =>
+        current.filter((grant) => grant.id !== grantId)
+      );
+      if (permissionGrantPlan?.id === grantId) {
+        setPermissionGrantPlan(null);
+      }
+      setPendingRevokeGrantId(null);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Permission grant revocation failed."
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  function requestPermissionGrantRevoke(grantId: string) {
+    if (pendingRevokeGrantId !== grantId) {
+      setPendingRevokeGrantId(grantId);
+      return;
+    }
+
+    void revokePermissionGrant(grantId);
   }
 
   function selectSearchMode(nextMode: SearchMode) {
@@ -917,6 +1037,8 @@ export function KnowledgeOSConsole() {
     setAnswerResponse(null);
     setWorkflowRunPlan(null);
     setPermissionGrantPlan(null);
+    setPermissionGrants([]);
+    setPendingRevokeGrantId(null);
     setError(null);
   }
 
@@ -1307,6 +1429,15 @@ export function KnowledgeOSConsole() {
                 <Database size={14} />
                 Durable write available
               </span>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={loadPermissionGrants}
+                disabled={busyAction !== null || !canManageCurrentMemberships}
+              >
+                <RefreshCw size={15} />
+                {busyAction === "permission-grants" ? "Refreshing" : "Refresh"}
+              </button>
             </div>
 
             <div className="permission-grant-form">
@@ -1449,6 +1580,43 @@ export function KnowledgeOSConsole() {
             ) : (
               <div className="empty-state">No permission grant planned</div>
             )}
+
+            <div className="permission-grant-list">
+              <div className="permission-grant-list-header">
+                <span>Durable grants</span>
+                <span className="count-pill">{permissionGrants.length} grants</span>
+              </div>
+              {permissionGrants.map((grant) => (
+                <article className="permission-grant-row" key={grant.id}>
+                  <div className="permission-grant-row-main">
+                    <span>
+                      {formatStatus(grant.subjectType)} | {grant.subjectId}
+                    </span>
+                    <strong>
+                      {formatStatus(grant.resourceType)} | {grant.resourceId}
+                    </strong>
+                  </div>
+                  <div className="permission-grant-row-meta">
+                    <span>{formatStatus(grant.action)}</span>
+                    <small>{formatActivityTime(grant.createdAt)}</small>
+                  </div>
+                  <button
+                    className="icon-button"
+                    type="button"
+                    onClick={() => requestPermissionGrantRevoke(grant.id)}
+                    disabled={
+                      busyAction !== null || !canManageCurrentMemberships
+                    }
+                  >
+                    <Trash2 size={15} />
+                    {pendingRevokeGrantId === grant.id ? "Confirm" : "Revoke"}
+                  </button>
+                </article>
+              ))}
+              {permissionGrants.length === 0 ? (
+                <div className="empty-state">No durable permission grants loaded</div>
+              ) : null}
+            </div>
           </section>
 
           <section className="workspace-grid">
@@ -2171,9 +2339,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-040 permission grant revoke API</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-041 permission grant revoke UI</span>
+                </div>
                 <div className="task-row in-progress">
                   <Activity size={16} />
-                  <span>T-041 permission grant revoke UI</span>
+                  <span>T-042 invitation persistence</span>
                 </div>
               </div>
             </div>
