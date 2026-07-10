@@ -11,10 +11,16 @@ import {
   type InvitationPlan,
   type InvitationPlanPayload
 } from "@/invitations/lifecycle";
+import {
+  createInvitationAcceptancePlan,
+  type InvitationAcceptancePayload,
+  type InvitationAcceptanceTarget
+} from "@/invitations/acceptance";
 import { hashInvitationToken } from "@/invitations/tokens";
+import { createBootstrapMembershipId } from "./identity-bootstrap-repository";
 
 import type { Database } from "./client";
-import { auditEvents, invitations } from "./schema";
+import { auditEvents, invitations, memberships, users } from "./schema";
 
 export type InvitationPersistenceMode = "created" | "existing";
 
@@ -27,6 +33,7 @@ export interface PersistedInvitation {
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date;
+  acceptedAt?: Date | null;
   revokedAt: Date | null;
 }
 
@@ -42,6 +49,29 @@ export interface InvitationRevocationResult {
   auditEvent: typeof auditEvents.$inferInsert;
 }
 
+export interface AcceptedInvitationMembership {
+  id: string;
+  organizationId: string;
+  userId: string;
+  role: MembershipRole;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AcceptedInvitationUser {
+  id: string;
+  email: string;
+  name: string;
+}
+
+export interface InvitationAcceptanceResult {
+  invitation: PersistedInvitation;
+  membership: AcceptedInvitationMembership;
+  user: AcceptedInvitationUser;
+  auditEvent: typeof auditEvents.$inferInsert;
+  session: Omit<AuthSession, "source">;
+}
+
 const invitationSelection = {
   id: invitations.id,
   organizationId: invitations.organizationId,
@@ -51,7 +81,13 @@ const invitationSelection = {
   createdAt: invitations.createdAt,
   updatedAt: invitations.updatedAt,
   expiresAt: invitations.expiresAt,
+  acceptedAt: invitations.acceptedAt,
   revokedAt: invitations.revokedAt
+};
+
+const invitationAcceptanceSelection = {
+  ...invitationSelection,
+  tokenHash: invitations.tokenHash
 };
 
 export { hashInvitationToken } from "@/invitations/tokens";
@@ -99,6 +135,28 @@ export function createInvitationRevocationAuditEvent(input: {
       revokedAt: revokedAt.toISOString()
     }
   };
+}
+
+function createInvitationAcceptanceAuditEvent(input: {
+  plan: ReturnType<typeof createInvitationAcceptancePlan>;
+  userId: string;
+  membershipId: string;
+}): typeof auditEvents.$inferInsert {
+  return {
+    ...input.plan.auditIntent,
+    actorUserId: input.userId,
+    action: "invitation.accepted",
+    metadata: {
+      ...input.plan.auditIntent.metadata,
+      userId: input.userId,
+      membershipId: input.membershipId,
+      plannedAction: input.plan.auditIntent.action
+    }
+  };
+}
+
+function defaultAcceptedUserName(email: string): string {
+  return email.split("@")[0] || email;
 }
 
 export async function listOrganizationInvitations(
@@ -259,6 +317,147 @@ export async function revokeInvitation(
     return {
       invitation,
       auditEvent
+    };
+  });
+}
+
+export async function acceptInvitation(
+  db: Database,
+  input: {
+    payload: InvitationAcceptancePayload;
+    now?: Date;
+  }
+): Promise<InvitationAcceptanceResult> {
+  return db.transaction(async (tx) => {
+    const [candidate] = await tx
+      .select(invitationAcceptanceSelection)
+      .from(invitations)
+      .where(eq(invitations.id, input.payload.invitationId))
+      .limit(1);
+
+    if (!candidate) {
+      throw new InvitationLifecycleError(
+        "not_found",
+        "Invitation was not found."
+      );
+    }
+
+    const plan = createInvitationAcceptancePlan({
+      payload: input.payload,
+      target: candidate as InvitationAcceptanceTarget,
+      now: input.now
+    });
+    const [insertedUser] = await tx
+      .insert(users)
+      .values({
+        email: plan.email,
+        name: defaultAcceptedUserName(plan.email),
+        metadata: {
+          invitationAccepted: true
+        }
+      })
+      .onConflictDoNothing({
+        target: users.email
+      })
+      .returning({
+        id: users.id,
+        email: users.email,
+        name: users.name
+      });
+    const user =
+      insertedUser ??
+      (
+        await tx
+          .select({
+            id: users.id,
+            email: users.email,
+            name: users.name
+          })
+          .from(users)
+          .where(eq(users.email, plan.email))
+          .limit(1)
+      )[0];
+
+    if (!user) {
+      throw new Error("Invitation acceptance user could not be resolved.");
+    }
+
+    const membershipId = createBootstrapMembershipId(
+      plan.organizationId,
+      user.id
+    );
+    const [membership] = await tx
+      .insert(memberships)
+      .values({
+        id: membershipId,
+        organizationId: plan.organizationId,
+        userId: user.id,
+        role: plan.role
+      })
+      .onConflictDoUpdate({
+        target: [memberships.organizationId, memberships.userId],
+        set: {
+          role: plan.role,
+          updatedAt: plan.acceptedAt
+        }
+      })
+      .returning({
+        id: memberships.id,
+        organizationId: memberships.organizationId,
+        userId: memberships.userId,
+        role: memberships.role,
+        createdAt: memberships.createdAt,
+        updatedAt: memberships.updatedAt
+      });
+
+    if (!membership) {
+      throw new Error("Invitation acceptance membership could not be resolved.");
+    }
+
+    const [invitation] = await tx
+      .update(invitations)
+      .set({
+        status: "accepted",
+        acceptedAt: plan.acceptedAt,
+        updatedAt: plan.acceptedAt
+      })
+      .where(
+        and(
+          eq(invitations.id, plan.invitationId),
+          eq(invitations.organizationId, plan.organizationId),
+          eq(invitations.status, "pending")
+        )
+      )
+      .returning(invitationSelection);
+
+    if (!invitation) {
+      throw new InvitationLifecycleError(
+        "not_found",
+        "Pending invitation was not found."
+      );
+    }
+
+    const auditEvent = createInvitationAcceptanceAuditEvent({
+      plan,
+      userId: user.id,
+      membershipId: membership.id
+    });
+
+    await tx.insert(auditEvents).values(auditEvent);
+
+    return {
+      invitation,
+      membership,
+      user,
+      auditEvent,
+      session: {
+        userId: user.id,
+        organizationId: plan.organizationId,
+        membershipId: membership.id,
+        role: membership.role,
+        email: user.email,
+        name: user.name
+      }
     };
   });
 }

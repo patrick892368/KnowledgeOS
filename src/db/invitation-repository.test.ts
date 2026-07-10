@@ -5,6 +5,7 @@ import { InvitationLifecycleError } from "@/invitations/lifecycle";
 
 import type { Database } from "./client";
 import {
+  acceptInvitation,
   createInvitationPersistenceAuditEvent,
   createInvitationRevocationAuditEvent,
   hashInvitationToken,
@@ -12,7 +13,7 @@ import {
   revokeInvitation,
   persistInvitation
 } from "./invitation-repository";
-import { auditEvents, invitations } from "./schema";
+import { auditEvents, invitations, memberships, users } from "./schema";
 
 const ownerSession: AuthSession = {
   userId: "22222222-2222-4222-8222-222222222222",
@@ -47,6 +48,33 @@ const revokedInvitationRow = {
   status: "revoked" as const,
   updatedAt: new Date("2026-07-10T02:00:00.000Z"),
   revokedAt: new Date("2026-07-10T02:00:00.000Z")
+};
+
+const acceptedInvitationRow = {
+  ...invitationRow,
+  status: "accepted" as const,
+  updatedAt: new Date("2026-07-10T03:00:00.000Z"),
+  acceptedAt: new Date("2026-07-10T03:00:00.000Z")
+};
+
+const acceptanceCandidate = {
+  ...invitationRow,
+  tokenHash: hashInvitationToken("invite-token")
+};
+
+const acceptedUserRow = {
+  id: "55555555-5555-4555-8555-555555555555",
+  email: invitationRow.email,
+  name: "member"
+};
+
+const acceptedMembershipRow = {
+  id: "66666666-6666-4666-8666-666666666666",
+  organizationId: ownerSession.organizationId,
+  userId: acceptedUserRow.id,
+  role: invitationRow.role,
+  createdAt: new Date("2026-07-10T03:00:00.000Z"),
+  updatedAt: new Date("2026-07-10T03:00:00.000Z")
 };
 
 function createDatabaseDouble(input: {
@@ -172,6 +200,107 @@ function createRevocationDatabaseDouble(rows: unknown[]) {
     auditValues,
     updateReturning,
     updateSet
+  };
+}
+
+function createAcceptanceDatabaseDouble(input: {
+  invitationRows: unknown[];
+  insertedUserRows: unknown[];
+  existingUserRows?: unknown[];
+  membershipRows: unknown[];
+  acceptedInvitationRows: unknown[];
+}) {
+  const auditWrites: unknown[] = [];
+  const userReturning = vi.fn(async () => input.insertedUserRows);
+  const userOnConflictDoNothing = vi.fn(() => ({
+    returning: userReturning
+  }));
+  const userValues = vi.fn(() => ({
+    onConflictDoNothing: userOnConflictDoNothing
+  }));
+  const membershipReturning = vi.fn(async () => input.membershipRows);
+  const membershipOnConflictDoUpdate = vi.fn(() => ({
+    returning: membershipReturning
+  }));
+  const membershipValues = vi.fn(() => ({
+    onConflictDoUpdate: membershipOnConflictDoUpdate
+  }));
+  const auditValues = vi.fn(async (value: unknown) => {
+    auditWrites.push(value);
+  });
+  const limit = vi.fn(async () => input.existingUserRows ?? []);
+  const where = vi.fn(() => ({
+    limit
+  }));
+  const from = vi.fn((table: unknown) => {
+    if (table === invitations) {
+      return {
+        where: vi.fn(() => ({
+          limit: vi.fn(async () => input.invitationRows)
+        }))
+      };
+    }
+
+    return {
+      where
+    };
+  });
+  const select = vi.fn(() => ({
+    from
+  }));
+  const updateReturning = vi.fn(async () => input.acceptedInvitationRows);
+  const updateWhere = vi.fn(() => ({
+    returning: updateReturning
+  }));
+  const updateSet = vi.fn(() => ({
+    where: updateWhere
+  }));
+  const tx = {
+    select,
+    insert: vi.fn((table: unknown) => {
+      if (table === users) {
+        return {
+          values: userValues
+        };
+      }
+
+      if (table === memberships) {
+        return {
+          values: membershipValues
+        };
+      }
+
+      if (table === auditEvents) {
+        return {
+          values: auditValues
+        };
+      }
+
+      throw new Error("Unexpected insert table.");
+    }),
+    update: vi.fn((table: unknown) => {
+      if (table !== invitations) {
+        throw new Error("Unexpected update table.");
+      }
+
+      return {
+        set: updateSet
+      };
+    })
+  };
+  const db = {
+    transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) =>
+      callback(tx)
+    )
+  };
+
+  return {
+    db: db as unknown as Database,
+    auditWrites,
+    userValues,
+    membershipValues,
+    updateSet,
+    select
   };
 }
 
@@ -412,5 +541,145 @@ describe("invitation listing and revocation authorization", () => {
       code: "not_found"
     });
     expect(db.auditValues).not.toHaveBeenCalled();
+  });
+});
+
+describe("acceptInvitation", () => {
+  it("accepts a pending invitation and writes membership plus audit event", async () => {
+    const db = createAcceptanceDatabaseDouble({
+      invitationRows: [acceptanceCandidate],
+      insertedUserRows: [acceptedUserRow],
+      membershipRows: [acceptedMembershipRow],
+      acceptedInvitationRows: [acceptedInvitationRow]
+    });
+
+    const result = await acceptInvitation(db.db, {
+      payload: {
+        invitationId: invitationRow.id,
+        token: "invite-token",
+        email: invitationRow.email,
+        organizationId: ownerSession.organizationId
+      },
+      now: acceptedInvitationRow.acceptedAt
+    });
+
+    expect(result).toMatchObject({
+      invitation: acceptedInvitationRow,
+      user: acceptedUserRow,
+      membership: acceptedMembershipRow,
+      session: {
+        userId: acceptedUserRow.id,
+        organizationId: ownerSession.organizationId,
+        membershipId: acceptedMembershipRow.id,
+        role: invitationRow.role,
+        email: invitationRow.email,
+        name: acceptedUserRow.name
+      },
+      auditEvent: {
+        action: "invitation.accepted",
+        actorUserId: acceptedUserRow.id,
+        metadata: {
+          invitationId: invitationRow.id,
+          membershipId: acceptedMembershipRow.id,
+          userId: acceptedUserRow.id,
+          previousStatus: "pending",
+          nextStatus: "accepted",
+          plannedAction: "invitation.acceptance_planned"
+        }
+      }
+    });
+    expect(db.userValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: invitationRow.email,
+        metadata: {
+          invitationAccepted: true
+        }
+      })
+    );
+    expect(db.membershipValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: ownerSession.organizationId,
+        userId: acceptedUserRow.id,
+        role: invitationRow.role
+      })
+    );
+    expect(db.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "accepted",
+        acceptedAt: acceptedInvitationRow.acceptedAt,
+        updatedAt: acceptedInvitationRow.acceptedAt
+      })
+    );
+    expect(db.auditWrites).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toMatch(/invite-token|tokenHash/i);
+  });
+
+  it("resolves existing users and upserts duplicate memberships", async () => {
+    const db = createAcceptanceDatabaseDouble({
+      invitationRows: [acceptanceCandidate],
+      insertedUserRows: [],
+      existingUserRows: [acceptedUserRow],
+      membershipRows: [acceptedMembershipRow],
+      acceptedInvitationRows: [acceptedInvitationRow]
+    });
+
+    const result = await acceptInvitation(db.db, {
+      payload: {
+        invitationId: invitationRow.id,
+        token: "invite-token",
+        email: invitationRow.email
+      },
+      now: acceptedInvitationRow.acceptedAt
+    });
+
+    expect(result.user).toEqual(acceptedUserRow);
+    expect(result.membership).toEqual(acceptedMembershipRow);
+    expect(db.select).toHaveBeenCalled();
+  });
+
+  it("rejects missing invitations before writing users or memberships", async () => {
+    const db = createAcceptanceDatabaseDouble({
+      invitationRows: [],
+      insertedUserRows: [],
+      membershipRows: [],
+      acceptedInvitationRows: []
+    });
+
+    await expect(
+      acceptInvitation(db.db, {
+        payload: {
+          invitationId: "missing",
+          token: "invite-token",
+          email: invitationRow.email
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "not_found"
+    });
+    expect(db.userValues).not.toHaveBeenCalled();
+    expect(db.membershipValues).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid tokens before mutating invitation state", async () => {
+    const db = createAcceptanceDatabaseDouble({
+      invitationRows: [acceptanceCandidate],
+      insertedUserRows: [],
+      membershipRows: [],
+      acceptedInvitationRows: []
+    });
+
+    await expect(
+      acceptInvitation(db.db, {
+        payload: {
+          invitationId: invitationRow.id,
+          token: "wrong-token",
+          email: invitationRow.email
+        }
+      })
+    ).rejects.toMatchObject({
+      code: "invalid_token"
+    });
+    expect(db.userValues).not.toHaveBeenCalled();
+    expect(db.updateSet).not.toHaveBeenCalled();
   });
 });
