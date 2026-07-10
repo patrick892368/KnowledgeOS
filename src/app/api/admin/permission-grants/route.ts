@@ -1,10 +1,39 @@
 import { authErrorResponse, requireSession } from "@/auth/session";
+import { createDatabaseClient } from "@/db/client";
+import {
+  persistPermissionGrant,
+  type PersistedPermissionGrant
+} from "@/db/permission-grant-repository";
 import {
   createPermissionGrantPlan,
+  parsePermissionGrantPersistFlag,
   parsePermissionGrantPlanPayload,
   PermissionGrantManagementError,
+  type PermissionGrantPlan,
   permissionGrantManagementErrorResponse
 } from "@/permissions/grant-management";
+
+function toDatabaseUnavailableError(error: unknown): PermissionGrantManagementError {
+  return new PermissionGrantManagementError(
+    "database_unavailable",
+    error instanceof Error
+      ? error.message
+      : "Permission grant database is unavailable."
+  );
+}
+
+function serializeGrant(grant: PermissionGrantPlan | PersistedPermissionGrant) {
+  return {
+    ...("id" in grant ? { id: grant.id } : {}),
+    organizationId: grant.organizationId,
+    subjectType: grant.subjectType,
+    subjectId: grant.subjectId,
+    resourceType: grant.resourceType,
+    resourceId: grant.resourceId,
+    action: grant.action,
+    createdAt: grant.createdAt.toISOString()
+  };
+}
 
 export async function POST(request: Request) {
   try {
@@ -20,22 +49,43 @@ export async function POST(request: Request) {
       );
     }
 
+    const grantPayload = parsePermissionGrantPlanPayload(payload);
+    const shouldPersist = parsePermissionGrantPersistFlag(payload);
+
+    if (shouldPersist) {
+      try {
+        const result = await persistPermissionGrant(createDatabaseClient(), {
+          session,
+          payload: grantPayload
+        });
+
+        return Response.json(
+          {
+            mode: result.mode,
+            grant: serializeGrant(result.grant),
+            auditIntent: result.auditIntent,
+            auditEvent: result.auditEvent
+          },
+          { status: result.mode === "created" ? 201 : 200 }
+        );
+      } catch (error) {
+        if (error instanceof PermissionGrantManagementError) {
+          throw error;
+        }
+
+        throw toDatabaseUnavailableError(error);
+      }
+    }
+
     const grant = createPermissionGrantPlan({
       session,
-      payload: parsePermissionGrantPlanPayload(payload)
+      payload: grantPayload
     });
 
     return Response.json(
       {
-        grant: {
-          organizationId: grant.organizationId,
-          subjectType: grant.subjectType,
-          subjectId: grant.subjectId,
-          resourceType: grant.resourceType,
-          resourceId: grant.resourceId,
-          action: grant.action,
-          createdAt: grant.createdAt.toISOString()
-        },
+        mode: "planned",
+        grant: serializeGrant(grant),
         auditIntent: grant.auditIntent
       },
       { status: 201 }

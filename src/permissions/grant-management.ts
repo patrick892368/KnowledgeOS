@@ -18,14 +18,21 @@ export type PermissionGrantManagementErrorCode =
   | "invalid_resource"
   | "invalid_action"
   | "forbidden"
-  | "not_found";
+  | "not_found"
+  | "database_unavailable";
 
 export class PermissionGrantManagementError extends Error {
   constructor(
     public readonly code: PermissionGrantManagementErrorCode,
     message: string,
     public readonly status =
-      code === "forbidden" ? 403 : code === "not_found" ? 404 : 400
+      code === "forbidden"
+        ? 403
+        : code === "not_found"
+          ? 404
+          : code === "database_unavailable"
+            ? 503
+            : 400
   ) {
     super(message);
     this.name = "PermissionGrantManagementError";
@@ -50,6 +57,30 @@ export interface PermissionGrantPlan {
   action: PermissionAction;
   createdAt: Date;
   auditIntent: typeof auditEvents.$inferInsert;
+}
+
+export function parsePermissionGrantPersistFlag(payload: unknown): boolean {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    throw new PermissionGrantManagementError(
+      "invalid_payload",
+      "Request body must be an object."
+    );
+  }
+
+  const candidate = payload as Partial<Record<"persist", unknown>>;
+
+  if (candidate.persist === undefined) {
+    return false;
+  }
+
+  if (typeof candidate.persist !== "boolean") {
+    throw new PermissionGrantManagementError(
+      "invalid_payload",
+      "persist must be a boolean when provided."
+    );
+  }
+
+  return candidate.persist;
 }
 
 function isPermissionSubjectType(value: string): value is PermissionSubjectType {
