@@ -394,7 +394,8 @@ button {
 .invitation-toolbar,
 .audit-toolbar,
 .violation-toolbar,
-.permission-grant-toolbar {
+.permission-grant-toolbar,
+.kpi-telemetry-toolbar {
   align-items: center;
   display: flex;
   flex-wrap: wrap;
@@ -1292,7 +1293,8 @@ button {
 
   .membership-toolbar,
   .invitation-toolbar,
-  .permission-grant-toolbar {
+  .permission-grant-toolbar,
+  .kpi-telemetry-toolbar {
     align-items: stretch;
     display: grid;
   }

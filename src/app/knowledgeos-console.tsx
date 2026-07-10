@@ -51,6 +51,7 @@ import { createWorkflowStatusRunRequest } from "@/workflows/default-template";
 import { createWorkflowMetricsSummary } from "@/workflows/metrics";
 import type { WorkflowRunPlan } from "@/workflows/run";
 import { createAdminAnalyticsKpiTelemetryEvents } from "@/telemetry/admin-analytics";
+import type { KpiTelemetryEvent } from "@/telemetry/kpi";
 
 type ApiError = {
   error: {
@@ -170,6 +171,17 @@ type ManagedPermissionGrant = PermissionGrantPlan & {
   id: string;
 };
 
+type PersistedKpiTelemetryEvent = KpiTelemetryEvent & {
+  createdAt: string;
+};
+
+type KpiTelemetryPersistenceSummary = {
+  totalCount: number;
+  createdCount: number;
+  existingCount: number;
+  latestEvent: PersistedKpiTelemetryEvent | null;
+};
+
 const membershipRoles: MembershipRole[] = ["owner", "admin", "editor", "viewer"];
 const invitationRoles: InvitationRole[] = ["admin", "editor", "viewer"];
 const permissionSubjectTypes: PermissionGrantSubjectType[] = [
@@ -206,6 +218,18 @@ function upsertInvitation(
   return [invitation, ...withoutInvitation].sort(
     (left, right) =>
       new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+  );
+}
+
+function upsertKpiTelemetryEvent(
+  events: PersistedKpiTelemetryEvent[],
+  event: PersistedKpiTelemetryEvent
+) {
+  const withoutEvent = events.filter((item) => item.id !== event.id);
+
+  return [event, ...withoutEvent].sort(
+    (left, right) =>
+      new Date(right.capturedAt).getTime() - new Date(left.capturedAt).getTime()
   );
 }
 
@@ -336,6 +360,10 @@ export function KnowledgeOSConsole() {
   const [permissionGrants, setPermissionGrants] = useState<
     ManagedPermissionGrant[]
   >([]);
+  const [persistedKpiTelemetryEvents, setPersistedKpiTelemetryEvents] =
+    useState<PersistedKpiTelemetryEvent[]>([]);
+  const [kpiTelemetryPersistence, setKpiTelemetryPersistence] =
+    useState<KpiTelemetryPersistenceSummary | null>(null);
   const [pendingRevokeGrantId, setPendingRevokeGrantId] = useState<string | null>(
     null
   );
@@ -360,6 +388,8 @@ export function KnowledgeOSConsole() {
     | "permission-grant"
     | "permission-grants"
     | "permission-grant-revoke"
+    | "kpi-telemetry"
+    | "kpi-telemetry-events"
     | "workflow"
     | null
   >(null);
@@ -559,6 +589,8 @@ export function KnowledgeOSConsole() {
     if (!session || !isMembershipManager(session.role)) {
       setMemberships([]);
       setInvitations([]);
+      setPersistedKpiTelemetryEvents([]);
+      setKpiTelemetryPersistence(null);
       setPendingRevokeInvitationId(null);
       setMemberRoleEdits({});
       return;
@@ -1122,6 +1154,104 @@ export function KnowledgeOSConsole() {
     void revokePermissionGrant(grantId);
   }
 
+  async function persistKpiTelemetryEvents() {
+    if (!canManageCurrentMemberships) {
+      setKpiTelemetryPersistence(null);
+      setError("Owner or admin signed session is required.");
+      return;
+    }
+
+    if (adminKpiTelemetryEvents.length === 0) {
+      setKpiTelemetryPersistence(null);
+      setError("No KPI telemetry events are available to persist.");
+      return;
+    }
+
+    setBusyAction("kpi-telemetry");
+    setError(null);
+
+    try {
+      const results: Array<{
+        mode: "created" | "existing";
+        event: PersistedKpiTelemetryEvent;
+      }> = [];
+
+      for (const event of adminKpiTelemetryEvents) {
+        const response = await fetch("/api/admin/kpi-telemetry", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "content-type": "application/json"
+          },
+          body: JSON.stringify(event)
+        });
+        const payload = await readApiResponse<{
+          mode: "created" | "existing";
+          event: PersistedKpiTelemetryEvent;
+        }>(response);
+
+        results.push(payload);
+      }
+
+      setPersistedKpiTelemetryEvents((current) =>
+        results.reduce(
+          (events, result) => upsertKpiTelemetryEvent(events, result.event),
+          current
+        )
+      );
+      setKpiTelemetryPersistence({
+        totalCount: results.length,
+        createdCount: results.filter((result) => result.mode === "created")
+          .length,
+        existingCount: results.filter((result) => result.mode === "existing")
+          .length,
+        latestEvent: results[0]?.event ?? null
+      });
+    } catch (caughtError) {
+      setKpiTelemetryPersistence(null);
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "KPI telemetry persistence failed."
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function loadPersistedKpiTelemetryEvents() {
+    if (!canManageCurrentMemberships) {
+      setPersistedKpiTelemetryEvents([]);
+      setKpiTelemetryPersistence(null);
+      setError("Owner or admin signed session is required.");
+      return;
+    }
+
+    setBusyAction("kpi-telemetry-events");
+    setError(null);
+
+    try {
+      const response = await fetch("/api/admin/kpi-telemetry?limit=25", {
+        method: "GET",
+        credentials: "same-origin"
+      });
+      const payload = await readApiResponse<{
+        events: PersistedKpiTelemetryEvent[];
+      }>(response);
+
+      setPersistedKpiTelemetryEvents(payload.events);
+    } catch (caughtError) {
+      setPersistedKpiTelemetryEvents([]);
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "KPI telemetry loading failed."
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
   function selectSearchMode(nextMode: SearchMode) {
     setSearchMode(nextMode);
     setLastPersistence(null);
@@ -1400,6 +1530,8 @@ export function KnowledgeOSConsole() {
     setWorkflowRunPlan(null);
     setPermissionGrantPlan(null);
     setPermissionGrants([]);
+    setPersistedKpiTelemetryEvents([]);
+    setKpiTelemetryPersistence(null);
     setPendingRevokeGrantId(null);
     setInvitationResult(null);
     setError(null);
@@ -3095,21 +3227,29 @@ export function KnowledgeOSConsole() {
                 <span className="eyebrow">Telemetry</span>
                 <h2>KPI telemetry</h2>
               </div>
-              <span className="verification-badge status-stable">Local only</span>
+              <span className="verification-badge status-stable">
+                {persistedKpiTelemetryEvents.length > 0
+                  ? "Local + persisted"
+                  : "Local only"}
+              </span>
             </div>
 
             <div className="quality-metric-grid">
               <div className="quality-metric">
-                <span>Events</span>
+                <span>Local events</span>
                 <strong>{adminKpiTelemetryEvents.length}</strong>
               </div>
               <div className="quality-metric">
-                <span>Categories</span>
-                <strong>
-                  {new Set(
-                    adminKpiTelemetryEvents.map((event) => event.category)
-                  ).size}
-                </strong>
+                <span>Persisted</span>
+                <strong>{persistedKpiTelemetryEvents.length}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Created</span>
+                <strong>{kpiTelemetryPersistence?.createdCount ?? 0}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Existing</span>
+                <strong>{kpiTelemetryPersistence?.existingCount ?? 0}</strong>
               </div>
               <div className="quality-metric">
                 <span>Governance</span>
@@ -3122,20 +3262,14 @@ export function KnowledgeOSConsole() {
                 </strong>
               </div>
               <div className="quality-metric">
-                <span>Source</span>
-                <strong>
-                  {formatStatus(adminKpiTelemetryEvents[0]?.source ?? "none")}
-                </strong>
-              </div>
-              <div className="quality-metric">
-                <span>Scope</span>
-                <strong>Local</strong>
-              </div>
-              <div className="quality-metric">
                 <span>Captured</span>
                 <strong>
-                  {adminKpiTelemetryEvents[0]
-                    ? formatActivityTime(adminKpiTelemetryEvents[0].capturedAt)
+                  {kpiTelemetryPersistence?.latestEvent
+                    ? formatActivityTime(
+                        kpiTelemetryPersistence.latestEvent.createdAt
+                      )
+                    : adminKpiTelemetryEvents[0]
+                      ? formatActivityTime(adminKpiTelemetryEvents[0].capturedAt)
                     : "None"}
                 </strong>
               </div>
@@ -3148,7 +3282,7 @@ export function KnowledgeOSConsole() {
               </span>
               <span className="status-pill">
                 <Database size={14} />
-                Non-persistent
+                Persisted current organization
               </span>
               <span className="status-pill">
                 <Activity size={14} />
@@ -3156,6 +3290,49 @@ export function KnowledgeOSConsole() {
               </span>
             </div>
 
+            <div className="kpi-telemetry-toolbar">
+              <div className="quality-footnote">
+                <span>Local preview</span>
+                <span>Persisted store</span>
+              </div>
+              <div className="identity-actions">
+                <button
+                  className="primary-button"
+                  disabled={busyAction !== null || !canManageCurrentMemberships}
+                  onClick={() => void persistKpiTelemetryEvents()}
+                  type="button"
+                >
+                  <Database size={15} />
+                  {busyAction === "kpi-telemetry" ? "Persisting" : "Persist"}
+                </button>
+                <button
+                  className="icon-button"
+                  disabled={busyAction !== null || !canManageCurrentMemberships}
+                  onClick={() => void loadPersistedKpiTelemetryEvents()}
+                  type="button"
+                >
+                  <RefreshCw size={15} />
+                  {busyAction === "kpi-telemetry-events"
+                    ? "Refreshing"
+                    : "Refresh"}
+                </button>
+              </div>
+            </div>
+
+            {kpiTelemetryPersistence ? (
+              <div className="persistence-note">
+                {kpiTelemetryPersistence.totalCount} events persisted |{" "}
+                {kpiTelemetryPersistence.createdCount} created |{" "}
+                {kpiTelemetryPersistence.existingCount} existing
+              </div>
+            ) : null}
+
+            <div className="invitation-list-header">
+              <span>Local event preview</span>
+              <span className="count-pill">
+                {adminKpiTelemetryEvents.length} events
+              </span>
+            </div>
             <div className="release-check-list">
               {adminKpiTelemetryEvents.map((event) => (
                 <article className="release-check-row" key={event.id}>
@@ -3165,10 +3342,36 @@ export function KnowledgeOSConsole() {
                     {formatStatus(event.unit)}
                   </strong>
                   <small>
-                    {formatStatus(event.category)} | {formatStatus(event.source)}
+                    {formatStatus(event.category)} | local preview |{" "}
+                    {formatStatus(event.source)}
                   </small>
                 </article>
               ))}
+            </div>
+
+            <div className="invitation-list-header">
+              <span>Persisted current-organization events</span>
+              <span className="count-pill">
+                {persistedKpiTelemetryEvents.length} events
+              </span>
+            </div>
+            <div className="release-check-list">
+              {persistedKpiTelemetryEvents.map((event) => (
+                <article className="release-check-row" key={event.id}>
+                  <span>{event.metricName}</span>
+                  <strong>
+                    {formatMetricValue(event.value, event.unit)}{" "}
+                    {formatStatus(event.unit)}
+                  </strong>
+                  <small>
+                    {formatStatus(event.category)} | persisted |{" "}
+                    {formatActivityTime(event.createdAt)}
+                  </small>
+                </article>
+              ))}
+              {persistedKpiTelemetryEvents.length === 0 ? (
+                <div className="empty-state">No persisted KPI telemetry loaded</div>
+              ) : null}
             </div>
           </section>
 
@@ -3396,9 +3599,21 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-059 KPI telemetry mapping</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-060 KPI telemetry UI</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-061 KPI telemetry persistence</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-062 KPI telemetry API</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-060 KPI telemetry UI</span>
+                  <span>T-063 KPI telemetry persistence UI</span>
                 </div>
               </div>
             </div>
