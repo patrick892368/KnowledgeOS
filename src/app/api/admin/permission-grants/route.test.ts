@@ -6,6 +6,8 @@ import { PermissionGrantManagementError } from "@/permissions/grant-management";
 const mocks = vi.hoisted(() => ({
   requireSession: vi.fn(),
   createDatabaseClient: vi.fn(),
+  listOrganizationPermissionGrants: vi.fn(),
+  revokePermissionGrant: vi.fn(),
   persistPermissionGrant: vi.fn()
 }));
 
@@ -28,11 +30,13 @@ vi.mock("@/db/permission-grant-repository", async (importOriginal) => {
 
   return {
     ...actual,
+    listOrganizationPermissionGrants: mocks.listOrganizationPermissionGrants,
+    revokePermissionGrant: mocks.revokePermissionGrant,
     persistPermissionGrant: mocks.persistPermissionGrant
   };
 });
 
-import { POST } from "./route";
+import { DELETE, GET, POST } from "./route";
 
 const session: AuthSession = {
   userId: "22222222-2222-4222-8222-222222222222",
@@ -47,6 +51,13 @@ const session: AuthSession = {
 function request(body: unknown): Request {
   return new Request("http://knowledgeos.local/api/admin/permission-grants", {
     method: "POST",
+    body: JSON.stringify(body)
+  });
+}
+
+function deleteRequest(body: unknown): Request {
+  return new Request("http://knowledgeos.local/api/admin/permission-grants", {
+    method: "DELETE",
     body: JSON.stringify(body)
   });
 }
@@ -390,5 +401,198 @@ describe("POST /api/admin/permission-grants", () => {
 
     expect(response.status).toBe(401);
     expect(payload.error.code).toBe("unauthenticated");
+  });
+});
+
+describe("GET /api/admin/permission-grants", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("lists current-organization permission grants for manager sessions", async () => {
+    const db = { name: "db" };
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockReturnValue(db);
+    mocks.listOrganizationPermissionGrants.mockResolvedValue([persistedGrant]);
+
+    const response = await GET();
+    const payload = (await response.json()) as {
+      grants: Array<{
+        id: string;
+        organizationId: string;
+        createdAt: string;
+      }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.grants).toEqual([
+      expect.objectContaining({
+        id: persistedGrant.id,
+        organizationId: session.organizationId,
+        createdAt: "2026-07-10T00:00:00.000Z"
+      })
+    ]);
+    expect(mocks.listOrganizationPermissionGrants).toHaveBeenCalledWith(
+      db,
+      session
+    );
+  });
+
+  it("returns list authorization failures", async () => {
+    const db = { name: "db" };
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockReturnValue(db);
+    mocks.listOrganizationPermissionGrants.mockRejectedValue(
+      new PermissionGrantManagementError(
+        "forbidden",
+        "Only owner or admin members can manage permission grants."
+      )
+    );
+
+    const response = await GET();
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(403);
+    expect(payload.error.code).toBe("forbidden");
+  });
+
+  it("returns database unavailable when grants cannot be listed", async () => {
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockImplementation(() => {
+      throw new Error("DATABASE_URL is required to create a database client.");
+    });
+
+    const response = await GET();
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(503);
+    expect(payload.error.code).toBe("database_unavailable");
+  });
+});
+
+describe("DELETE /api/admin/permission-grants", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("revokes a current-organization permission grant", async () => {
+    const db = { name: "db" };
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockReturnValue(db);
+    mocks.revokePermissionGrant.mockResolvedValue({
+      grant: persistedGrant,
+      auditEvent: {
+        ...auditIntent,
+        action: "permission_grant.revoked",
+        metadata: {
+          grantId: persistedGrant.id,
+          subjectType: "role",
+          subjectId: "editor",
+          action: "write"
+        }
+      }
+    });
+
+    const response = await DELETE(
+      deleteRequest({
+        grantId: persistedGrant.id
+      })
+    );
+    const payload = (await response.json()) as {
+      grant: {
+        id: string;
+      };
+      auditEvent: {
+        action: string;
+        metadata: Record<string, unknown>;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.grant.id).toBe(persistedGrant.id);
+    expect(payload.auditEvent).toMatchObject({
+      action: "permission_grant.revoked",
+      metadata: {
+        grantId: persistedGrant.id
+      }
+    });
+    expect(mocks.revokePermissionGrant).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        session,
+        grantId: persistedGrant.id
+      })
+    );
+  });
+
+  it("rejects invalid revocation payloads before database access", async () => {
+    mocks.requireSession.mockResolvedValue(session);
+
+    const response = await DELETE(deleteRequest({}));
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(400);
+    expect(payload.error.code).toBe("invalid_payload");
+    expect(mocks.createDatabaseClient).not.toHaveBeenCalled();
+    expect(mocks.revokePermissionGrant).not.toHaveBeenCalled();
+  });
+
+  it("returns not found for missing or cross-organization grants", async () => {
+    const db = { name: "db" };
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockReturnValue(db);
+    mocks.revokePermissionGrant.mockRejectedValue(
+      new PermissionGrantManagementError(
+        "not_found",
+        "Permission grant was not found."
+      )
+    );
+
+    const response = await DELETE(
+      deleteRequest({
+        grantId: "99999999-9999-4999-8999-999999999999"
+      })
+    );
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(404);
+    expect(payload.error.code).toBe("not_found");
+  });
+
+  it("returns database unavailable when revocation cannot open the database", async () => {
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockImplementation(() => {
+      throw new Error("DATABASE_URL is required to create a database client.");
+    });
+
+    const response = await DELETE(
+      deleteRequest({
+        grantId: persistedGrant.id
+      })
+    );
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(503);
+    expect(payload.error.code).toBe("database_unavailable");
   });
 });

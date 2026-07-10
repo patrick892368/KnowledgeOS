@@ -1,8 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import type { AuthSession } from "@/auth/session";
+import { canRoleManagePermissionGrants } from "@/db/model";
 import {
   createPermissionGrantPlan,
+  PermissionGrantManagementError,
   type PermissionGrantPlan,
   type PermissionGrantPlanPayload
 } from "@/permissions/grant-management";
@@ -27,6 +29,11 @@ export interface PermissionGrantPersistenceResult {
   mode: PermissionGrantPersistenceMode;
   grant: PersistedPermissionGrant;
   auditIntent: typeof auditEvents.$inferInsert;
+  auditEvent: typeof auditEvents.$inferInsert;
+}
+
+export interface PermissionGrantRevocationResult {
+  grant: PersistedPermissionGrant;
   auditEvent: typeof auditEvents.$inferInsert;
 }
 
@@ -59,6 +66,49 @@ export function createPermissionGrantPersistenceAuditEvent(input: {
       plannedAction: input.plan.auditIntent.action
     }
   };
+}
+
+export function createPermissionGrantRevocationAuditEvent(input: {
+  session: AuthSession;
+  grant: PersistedPermissionGrant;
+  now?: Date;
+}): typeof auditEvents.$inferInsert {
+  const revokedAt = input.now ?? new Date();
+
+  return {
+    organizationId: input.session.organizationId,
+    actorUserId: input.session.userId,
+    action: "permission_grant.revoked",
+    resourceType: input.grant.resourceType,
+    resourceId: input.grant.resourceId,
+    metadata: {
+      grantId: input.grant.id,
+      subjectType: input.grant.subjectType,
+      subjectId: input.grant.subjectId,
+      resourceType: input.grant.resourceType,
+      resourceId: input.grant.resourceId,
+      action: input.grant.action,
+      revokedAt: revokedAt.toISOString()
+    }
+  };
+}
+
+export async function listOrganizationPermissionGrants(
+  db: Database,
+  session: AuthSession
+): Promise<PersistedPermissionGrant[]> {
+  if (!canRoleManagePermissionGrants(session.role)) {
+    throw new PermissionGrantManagementError(
+      "forbidden",
+      "Only owner or admin members can manage permission grants."
+    );
+  }
+
+  return db
+    .select(permissionGrantSelection)
+    .from(permissionGrants)
+    .where(eq(permissionGrants.organizationId, session.organizationId))
+    .orderBy(desc(permissionGrants.createdAt));
 }
 
 export async function persistPermissionGrant(
@@ -131,6 +181,54 @@ export async function persistPermissionGrant(
       mode,
       grant,
       auditIntent: plan.auditIntent,
+      auditEvent
+    };
+  });
+}
+
+export async function revokePermissionGrant(
+  db: Database,
+  input: {
+    session: AuthSession;
+    grantId: string;
+    now?: Date;
+  }
+): Promise<PermissionGrantRevocationResult> {
+  if (!canRoleManagePermissionGrants(input.session.role)) {
+    throw new PermissionGrantManagementError(
+      "forbidden",
+      "Only owner or admin members can manage permission grants."
+    );
+  }
+
+  return db.transaction(async (tx) => {
+    const [grant] = await tx
+      .delete(permissionGrants)
+      .where(
+        and(
+          eq(permissionGrants.id, input.grantId),
+          eq(permissionGrants.organizationId, input.session.organizationId)
+        )
+      )
+      .returning(permissionGrantSelection);
+
+    if (!grant) {
+      throw new PermissionGrantManagementError(
+        "not_found",
+        "Permission grant was not found."
+      );
+    }
+
+    const auditEvent = createPermissionGrantRevocationAuditEvent({
+      session: input.session,
+      grant,
+      now: input.now
+    });
+
+    await tx.insert(auditEvents).values(auditEvent);
+
+    return {
+      grant,
       auditEvent
     };
   });

@@ -59,6 +59,10 @@ export interface PermissionGrantPlan {
   auditIntent: typeof auditEvents.$inferInsert;
 }
 
+export interface PermissionGrantRevocationPayload {
+  grantId: string;
+}
+
 export function parsePermissionGrantPersistFlag(payload: unknown): boolean {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
     throw new PermissionGrantManagementError(
@@ -180,6 +184,31 @@ export function parsePermissionGrantPlanPayload(
     resourceType,
     resourceId,
     action
+  };
+}
+
+export function parsePermissionGrantRevocationPayload(
+  payload: unknown
+): PermissionGrantRevocationPayload {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    throw new PermissionGrantManagementError(
+      "invalid_payload",
+      "Request body must be an object."
+    );
+  }
+
+  const candidate = payload as Partial<Record<"grantId", unknown>>;
+  const grantId = readTrimmedString(candidate.grantId);
+
+  if (!grantId) {
+    throw new PermissionGrantManagementError(
+      "invalid_payload",
+      "grantId is required."
+    );
+  }
+
+  return {
+    grantId
   };
 }
 

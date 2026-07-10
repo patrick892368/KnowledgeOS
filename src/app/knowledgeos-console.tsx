@@ -2167,9 +2167,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-039 permission grant persistence UI</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-040 permission grant revoke API</span>
+                </div>
                 <div className="task-row in-progress">
                   <Activity size={16} />
-                  <span>T-040 permission grant revoke API</span>
+                  <span>T-041 permission grant revoke UI</span>
                 </div>
               </div>
             </div>

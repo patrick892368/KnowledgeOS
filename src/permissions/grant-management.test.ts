@@ -5,6 +5,7 @@ import type { AuthSession } from "@/auth/session";
 import {
   createPermissionGrantPlan,
   parsePermissionGrantPlanPayload,
+  parsePermissionGrantRevocationPayload,
   PermissionGrantManagementError
 } from "./grant-management";
 
@@ -173,5 +174,23 @@ describe("createPermissionGrantPlan", () => {
         })
       })
     ).toThrow(PermissionGrantManagementError);
+  });
+});
+
+describe("parsePermissionGrantRevocationPayload", () => {
+  it("accepts a trimmed grant id", () => {
+    expect(
+      parsePermissionGrantRevocationPayload({
+        grantId: " 44444444-4444-4444-8444-444444444444 "
+      })
+    ).toEqual({
+      grantId: "44444444-4444-4444-8444-444444444444"
+    });
+  });
+
+  it("rejects missing grant ids", () => {
+    expect(() => parsePermissionGrantRevocationPayload({})).toThrow(
+      "grantId is required."
+    );
   });
 });

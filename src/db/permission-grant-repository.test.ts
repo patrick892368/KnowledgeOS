@@ -6,6 +6,9 @@ import { PermissionGrantManagementError } from "@/permissions/grant-management";
 import type { Database } from "./client";
 import {
   createPermissionGrantPersistenceAuditEvent,
+  createPermissionGrantRevocationAuditEvent,
+  listOrganizationPermissionGrants,
+  revokePermissionGrant,
   persistPermissionGrant
 } from "./permission-grant-repository";
 import { auditEvents, permissionGrants } from "./schema";
@@ -134,6 +137,31 @@ describe("createPermissionGrantPersistenceAuditEvent", () => {
   });
 });
 
+describe("createPermissionGrantRevocationAuditEvent", () => {
+  it("records grant revocation metadata without source content", () => {
+    const event = createPermissionGrantRevocationAuditEvent({
+      session: ownerSession,
+      grant: grantRow,
+      now: new Date("2026-07-10T02:00:00.000Z")
+    });
+
+    expect(event).toMatchObject({
+      organizationId: ownerSession.organizationId,
+      actorUserId: ownerSession.userId,
+      action: "permission_grant.revoked",
+      resourceType: "workflow",
+      resourceId: "workflow_1",
+      metadata: {
+        grantId: grantRow.id,
+        subjectType: "role",
+        subjectId: "editor",
+        action: "write",
+        revokedAt: "2026-07-10T02:00:00.000Z"
+      }
+    });
+  });
+});
+
 describe("persistPermissionGrant", () => {
   it("inserts a validated permission grant and writes a create audit event", async () => {
     const db = createDatabaseDouble({
@@ -219,5 +247,33 @@ describe("persistPermissionGrant", () => {
     ).rejects.toThrow(PermissionGrantManagementError);
 
     expect(db.grantValues).not.toHaveBeenCalled();
+  });
+});
+
+describe("permission grant listing and revocation authorization", () => {
+  it("rejects non-manager list requests before querying the database", async () => {
+    await expect(
+      listOrganizationPermissionGrants({} as Database, {
+        ...ownerSession,
+        role: "viewer"
+      })
+    ).rejects.toThrow(PermissionGrantManagementError);
+  });
+
+  it("rejects non-manager revoke requests before opening a transaction", async () => {
+    const db = {
+      transaction: vi.fn()
+    } as unknown as Database;
+
+    await expect(
+      revokePermissionGrant(db, {
+        session: {
+          ...ownerSession,
+          role: "viewer"
+        },
+        grantId: grantRow.id
+      })
+    ).rejects.toThrow(PermissionGrantManagementError);
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 });
