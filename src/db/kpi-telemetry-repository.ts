@@ -14,7 +14,11 @@ import type { Database } from "./client";
 import { kpiTelemetryEvents } from "./schema";
 
 export type KpiTelemetryPersistenceMode = "created" | "existing";
-export type KpiTelemetryPersistenceErrorCode = "forbidden" | "cross_scope";
+export type KpiTelemetryPersistenceErrorCode =
+  | "forbidden"
+  | "cross_scope"
+  | "database_unavailable"
+  | "invalid_payload";
 
 export class KpiTelemetryPersistenceError extends Error {
   constructor(
