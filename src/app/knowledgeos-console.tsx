@@ -37,6 +37,7 @@ import { createRetrievalQualitySummary } from "@/quality/retrieval";
 import { createSourceQualitySummary } from "@/quality/source";
 import type { LocalSearchResponse } from "@/search/types";
 import { createWorkflowStatusRunRequest } from "@/workflows/default-template";
+import { createWorkflowMetricsSummary } from "@/workflows/metrics";
 import type { WorkflowRunPlan } from "@/workflows/run";
 
 type ApiError = {
@@ -383,6 +384,13 @@ export function KnowledgeOSConsole() {
         connectorStatuses
       }),
     [connectorStatuses]
+  );
+  const workflowMetrics = useMemo(
+    () =>
+      createWorkflowMetricsSummary({
+        plans: workflowRunPlan ? [workflowRunPlan] : []
+      }),
+    [workflowRunPlan]
   );
 
   useEffect(() => {
@@ -2566,6 +2574,59 @@ export function KnowledgeOSConsole() {
             )}
           </section>
 
+          <section className="workflow-metrics-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Automation</span>
+                <h2>Workflow metrics</h2>
+              </div>
+              <span className={`verification-badge status-${workflowMetrics.status}`}>
+                {formatStatus(workflowMetrics.status)}
+              </span>
+            </div>
+
+            <div className="quality-metric-grid">
+              <div className="quality-metric">
+                <span>Plans</span>
+                <strong>{workflowMetrics.planCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Queued steps</span>
+                <strong>{workflowMetrics.queuedStepCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Review gates</span>
+                <strong>{workflowMetrics.reviewGateCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Outputs</span>
+                <strong>{workflowMetrics.outputKeyCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Plan-only</span>
+                <strong>
+                  {formatPercent(workflowMetrics.planOnlyComplianceRate)}
+                </strong>
+              </div>
+              <div className="quality-metric">
+                <span>Avg gates</span>
+                <strong>
+                  {workflowMetrics.averageReviewGatesPerPlan.toFixed(1)}
+                </strong>
+              </div>
+            </div>
+
+            {workflowMetrics.planCount > 0 ? (
+              <div className="quality-footnote">
+                <span>{workflowMetrics.queuedRunCount} queued runs</span>
+                <span>{workflowMetrics.uniqueReviewGateCount} unique gates</span>
+                <span>No worker execution</span>
+              </div>
+            ) : (
+              <div className="empty-state">No workflow metrics yet</div>
+            )}
+          </section>
+
           <section className="lower-grid">
             <div className="data-panel">
               <div className="panel-header">
@@ -2730,9 +2791,17 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-044 invitation revoke API</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-045 invitation revoke UI</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-046 workflow metrics foundation</span>
+                </div>
                 <div className="task-row in-progress">
                   <Activity size={16} />
-                  <span>T-045 invitation revoke UI</span>
+                  <span>T-047 workflow metrics UI</span>
                 </div>
               </div>
             </div>

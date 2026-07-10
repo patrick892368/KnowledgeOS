@@ -214,7 +214,8 @@ a {
 .source-quality-panel,
 .source-freshness-panel,
 .connector-reliability-panel,
-.workflow-panel {
+.workflow-panel,
+.workflow-metrics-panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -682,7 +683,8 @@ button {
   align-content: start;
 }
 
-.workflow-panel {
+.workflow-panel,
+.workflow-metrics-panel {
   align-content: start;
 }
 
@@ -854,7 +856,8 @@ button {
 .verification-badge.status-no_data,
 .verification-badge.status-stale,
 .verification-badge.status-degraded,
-.verification-badge.status-needs_attention {
+.verification-badge.status-needs_attention,
+.verification-badge.status-review_heavy {
   background: #fff7e6;
   color: var(--warning);
 }
@@ -868,7 +871,8 @@ button {
 .retrieval-quality-panel,
 .source-quality-panel,
 .source-freshness-panel,
-.connector-reliability-panel {
+.connector-reliability-panel,
+.workflow-metrics-panel {
   align-content: start;
 }
 
@@ -1146,7 +1150,8 @@ button {
   .verification-badge.status-no_data,
   .verification-badge.status-stale,
   .verification-badge.status-degraded,
-  .verification-badge.status-needs_attention {
+  .verification-badge.status-needs_attention,
+  .verification-badge.status-review_heavy {
     background: #3b2d12;
   }
 
