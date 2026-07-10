@@ -459,6 +459,22 @@ button {
   grid-template-columns: repeat(2, minmax(92px, 1fr));
 }
 
+.invitation-acceptance {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+}
+
+.invitation-acceptance-form {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns:
+    minmax(150px, 1fr) minmax(130px, 0.8fr) minmax(150px, 1fr)
+    minmax(140px, 0.9fr) auto;
+}
+
 .invitation-output {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1302,6 +1318,7 @@ button {
   .audit-toolbar,
   .violation-toolbar,
   .invitation-form,
+  .invitation-acceptance-form,
   .invitation-actions,
   .invitation-output,
   .invitation-row,

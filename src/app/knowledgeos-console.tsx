@@ -61,6 +61,17 @@ type ApiError = {
   };
 };
 
+class ApiRequestError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly recoverable?: boolean
+  ) {
+    super(message);
+    this.name = "ApiRequestError";
+  }
+}
+
 type SearchMode = "request-scoped" | "persisted";
 type MembershipRole = AuthSession["role"];
 
@@ -118,11 +129,29 @@ type ManagedInvitation = {
   createdAt: string;
   updatedAt?: string;
   expiresAt: string;
+  acceptedAt?: string;
   revokedAt?: string;
 };
 
 type InvitationResult = ManagedInvitation & {
   mode: "planned" | "created" | "existing";
+  auditAction?: string;
+};
+
+type InvitationAcceptanceMembership = {
+  id: string;
+  organizationId: string;
+  userId: string;
+  role: InvitationRole;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type InvitationAcceptanceResult = {
+  mode: "accepted";
+  invitation: ManagedInvitation;
+  membership: InvitationAcceptanceMembership;
+  session: AuthSession;
   auditAction?: string;
 };
 
@@ -259,7 +288,15 @@ async function readApiResponse<T>(response: Response): Promise<T> {
   const payload = (await response.json()) as unknown;
 
   if (!response.ok) {
-    throw new Error(isApiError(payload) ? payload.error.message : "Request failed.");
+    if (isApiError(payload)) {
+      throw new ApiRequestError(
+        payload.error.code,
+        payload.error.message,
+        payload.error.recoverable
+      );
+    }
+
+    throw new ApiRequestError("request_failed", "Request failed.");
   }
 
   return payload as T;
@@ -344,6 +381,16 @@ export function KnowledgeOSConsole() {
   const [invitations, setInvitations] = useState<ManagedInvitation[]>([]);
   const [pendingRevokeInvitationId, setPendingRevokeInvitationId] =
     useState<string | null>(null);
+  const [acceptanceInvitationId, setAcceptanceInvitationId] = useState("");
+  const [acceptanceToken, setAcceptanceToken] = useState("");
+  const [acceptanceEmail, setAcceptanceEmail] = useState("new.member@example.com");
+  const [acceptanceOrganizationId, setAcceptanceOrganizationId] = useState("");
+  const [acceptanceResult, setAcceptanceResult] =
+    useState<InvitationAcceptanceResult | null>(null);
+  const [acceptanceIssue, setAcceptanceIssue] = useState<{
+    code: string;
+    message: string;
+  } | null>(null);
   const [auditEvents, setAuditEvents] = useState<ManagedAuditEvent[]>([]);
   const [permissionViolations, setPermissionViolations] = useState<
     PermissionViolationSignal[]
@@ -383,6 +430,7 @@ export function KnowledgeOSConsole() {
     | "invitation"
     | "invitations"
     | "invitation-revoke"
+    | "invitation-accept"
     | "audit-events"
     | "permission-violations"
     | "permission-grant"
@@ -996,6 +1044,87 @@ export function KnowledgeOSConsole() {
     }
 
     void revokeInvitation(invitationId);
+  }
+
+  async function acceptInvitationFromUi() {
+    const invitationId = acceptanceInvitationId.trim();
+    const token = acceptanceToken;
+    const email = acceptanceEmail.trim();
+    const organizationId = acceptanceOrganizationId.trim();
+
+    if (!invitationId || !token.trim() || !email) {
+      setAcceptanceResult(null);
+      setAcceptanceIssue({
+        code: "invalid_payload",
+        message: "Invitation ID, token, and email are required."
+      });
+      setError("Invitation ID, token, and email are required.");
+      return;
+    }
+
+    setBusyAction("invitation-accept");
+    setAcceptanceResult(null);
+    setAcceptanceIssue(null);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/invitations/accept", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          invitationId,
+          token,
+          email,
+          ...(organizationId ? { organizationId } : {})
+        })
+      });
+      const payload = await readApiResponse<{
+        mode: "accepted";
+        invitation: ManagedInvitation;
+        membership: InvitationAcceptanceMembership;
+        session: AuthSession;
+        auditEvent?: {
+          action: string;
+        };
+      }>(response);
+
+      setAcceptanceResult({
+        mode: payload.mode,
+        invitation: payload.invitation,
+        membership: payload.membership,
+        session: payload.session,
+        auditAction: payload.auditEvent?.action
+      });
+      setSession(payload.session);
+      setInvitations((current) => upsertInvitation(current, payload.invitation));
+    } catch (caughtError) {
+      setAcceptanceResult(null);
+      setAcceptanceIssue(
+        caughtError instanceof ApiRequestError
+          ? {
+              code: caughtError.code,
+              message: caughtError.message
+            }
+          : {
+              code: "request_failed",
+              message:
+                caughtError instanceof Error
+                  ? caughtError.message
+                  : "Invitation acceptance failed."
+            }
+      );
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Invitation acceptance failed."
+      );
+    } finally {
+      setAcceptanceToken("");
+      setBusyAction(null);
+    }
   }
 
   async function submitPermissionGrant(persist: boolean) {
@@ -1817,6 +1946,115 @@ export function KnowledgeOSConsole() {
               <div className="empty-state">No invitation planned</div>
             )}
 
+            <div className="invitation-acceptance">
+              <div className="invitation-list-header">
+                <span>Accept invitation</span>
+                <span className="count-pill">
+                  {acceptanceResult ? "Accepted" : "Token cleared after submit"}
+                </span>
+              </div>
+
+              <div className="invitation-acceptance-form">
+                <label className="field">
+                  <span>Invitation ID</span>
+                  <input
+                    value={acceptanceInvitationId}
+                    onChange={(event) =>
+                      setAcceptanceInvitationId(event.target.value)
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>Invitation token</span>
+                  <input
+                    autoComplete="one-time-code"
+                    type="password"
+                    value={acceptanceToken}
+                    onChange={(event) => setAcceptanceToken(event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Email</span>
+                  <input
+                    value={acceptanceEmail}
+                    onChange={(event) => setAcceptanceEmail(event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Organization scope</span>
+                  <input
+                    placeholder="Optional"
+                    value={acceptanceOrganizationId}
+                    onChange={(event) =>
+                      setAcceptanceOrganizationId(event.target.value)
+                    }
+                  />
+                </label>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={acceptInvitationFromUi}
+                  disabled={
+                    busyAction !== null ||
+                    acceptanceInvitationId.trim().length === 0 ||
+                    acceptanceToken.trim().length === 0 ||
+                    acceptanceEmail.trim().length === 0
+                  }
+                >
+                  <LogIn size={16} />
+                  {busyAction === "invitation-accept" ? "Accepting" : "Accept"}
+                </button>
+              </div>
+
+              {acceptanceResult ? (
+                <div className="invitation-output">
+                  <div>
+                    <span>Mode</span>
+                    <strong>{formatStatus(acceptanceResult.mode)}</strong>
+                  </div>
+                  <div>
+                    <span>Email</span>
+                    <strong>
+                      {acceptanceResult.session.email ??
+                        acceptanceResult.session.userId}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Role</span>
+                    <strong>{acceptanceResult.membership.role}</strong>
+                  </div>
+                  <div>
+                    <span>Membership</span>
+                    <strong>{acceptanceResult.membership.id}</strong>
+                  </div>
+                  <div>
+                    <span>Session</span>
+                    <strong>{formatStatus(acceptanceResult.session.source)}</strong>
+                  </div>
+                  {acceptanceResult.invitation.acceptedAt ? (
+                    <div>
+                      <span>Accepted</span>
+                      <strong>
+                        {formatActivityTime(acceptanceResult.invitation.acceptedAt)}
+                      </strong>
+                    </div>
+                  ) : null}
+                  {acceptanceResult.auditAction ? (
+                    <div>
+                      <span>Audit</span>
+                      <strong>{formatStatus(acceptanceResult.auditAction)}</strong>
+                    </div>
+                  ) : null}
+                </div>
+              ) : acceptanceIssue ? (
+                <div className="empty-state">
+                  {formatStatus(acceptanceIssue.code)}: {acceptanceIssue.message}
+                </div>
+              ) : (
+                <div className="empty-state">No invitation accepted</div>
+              )}
+            </div>
+
             <div className="invitation-list">
               <div className="invitation-list-header">
                 <span>Durable invitations</span>
@@ -1835,6 +2073,10 @@ export function KnowledgeOSConsole() {
                     {invitation.revokedAt ? (
                       <small>
                         Revoked {formatActivityTime(invitation.revokedAt)}
+                      </small>
+                    ) : invitation.acceptedAt ? (
+                      <small>
+                        Accepted {formatActivityTime(invitation.acceptedAt)}
                       </small>
                     ) : (
                       <small>Created {formatActivityTime(invitation.createdAt)}</small>
@@ -3611,9 +3853,21 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-062 KPI telemetry API</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-063 KPI telemetry persistence UI</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-064 invitation acceptance contract</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-065 invitation acceptance API</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-063 KPI telemetry persistence UI</span>
+                  <span>T-066 invitation acceptance UI</span>
                 </div>
               </div>
             </div>
