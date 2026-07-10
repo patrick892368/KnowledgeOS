@@ -218,7 +218,8 @@ a {
 .workflow-metrics-panel,
 .release-readiness-panel,
 .release-history-panel,
-.operational-reliability-panel {
+.operational-reliability-panel,
+.admin-analytics-panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -690,7 +691,8 @@ button {
 .workflow-metrics-panel,
 .release-readiness-panel,
 .release-history-panel,
-.operational-reliability-panel {
+.operational-reliability-panel,
+.admin-analytics-panel {
   align-content: start;
 }
 
@@ -923,7 +925,8 @@ button {
 .workflow-metrics-panel,
 .release-readiness-panel,
 .release-history-panel,
-.operational-reliability-panel {
+.operational-reliability-panel,
+.admin-analytics-panel {
   align-content: start;
 }
 

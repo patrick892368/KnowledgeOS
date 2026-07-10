@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { createAdminAnalyticsSummary } from "@/analytics/admin";
 import type { AuthSession } from "@/auth/session";
 import type { LocalAnswerResponse } from "@/answers/types";
 import {
@@ -459,6 +460,34 @@ export function KnowledgeOSConsole() {
     [
       connectorReliability.status,
       releaseReadiness.status,
+      sourceFreshness.status,
+      sourceQuality.status,
+      workflowMetrics.status
+    ]
+  );
+  const adminAnalytics = useMemo(
+    () =>
+      createAdminAnalyticsSummary({
+        retrievalQuality: retrievalQuality.status,
+        sourceQuality: sourceQuality.status,
+        sourceFreshness: sourceFreshness.status,
+        connectorReliability: connectorReliability.status,
+        workflowMetrics: workflowMetrics.status,
+        operationalReliability: operationalReliability.status,
+        governance: {
+          auditEventCount: auditEvents.length,
+          permissionViolationCount: permissionViolations.length,
+          highSeverityViolationCount: permissionViolations.filter(
+            (violation) => violation.severity === "high"
+          ).length
+        }
+      }),
+    [
+      auditEvents.length,
+      connectorReliability.status,
+      operationalReliability.status,
+      permissionViolations,
+      retrievalQuality.status,
       sourceFreshness.status,
       sourceQuality.status,
       workflowMetrics.status
@@ -2884,6 +2913,76 @@ export function KnowledgeOSConsole() {
             </div>
           </section>
 
+          <section className="admin-analytics-panel">
+            <div className="panel-header">
+              <div>
+                <span className="eyebrow">Analytics</span>
+                <h2>Admin analytics</h2>
+              </div>
+              <span className={`verification-badge status-${adminAnalytics.status}`}>
+                {formatStatus(adminAnalytics.status)}
+              </span>
+            </div>
+
+            <div className="quality-metric-grid">
+              <div className="quality-metric">
+                <span>Signals</span>
+                <strong>{adminAnalytics.signalCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Healthy</span>
+                <strong>{adminAnalytics.healthySignals}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Warnings</span>
+                <strong>{adminAnalytics.warningSignals}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Blocked</span>
+                <strong>{adminAnalytics.blockedSignals}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>Violations</span>
+                <strong>{adminAnalytics.permissionViolationCount}</strong>
+              </div>
+              <div className="quality-metric">
+                <span>High risk</span>
+                <strong>{adminAnalytics.highSeverityViolationCount}</strong>
+              </div>
+            </div>
+
+            <div className="release-readiness-strip">
+              <span className="status-pill">
+                <ShieldCheck size={14} />
+                Aggregate KPI signals
+              </span>
+              <span className="status-pill">
+                <Database size={14} />
+                No raw audit metadata
+              </span>
+              <span className="status-pill">
+                <Activity size={14} />
+                {adminAnalytics.governanceEventCount} governance events
+              </span>
+            </div>
+
+            <div className="release-check-list">
+              {adminAnalytics.signals.map((signal) => (
+                <article
+                  className={`release-check-row status-${signal.status}`}
+                  key={signal.label}
+                >
+                  <span>{signal.label}</span>
+                  <strong>{formatStatus(signal.status)}</strong>
+                  <small>
+                    {formatStatus(signal.category)} |{" "}
+                    {formatStatus(signal.sourceStatus)}
+                  </small>
+                </article>
+              ))}
+            </div>
+          </section>
+
           <section className="lower-grid">
             <div className="data-panel">
               <div className="panel-header">
@@ -3080,9 +3179,17 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-052 operational reliability summary</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-053 operational reliability UI</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-054 admin analytics summary</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-053 operational reliability UI</span>
+                  <span>T-055 admin analytics UI</span>
                 </div>
               </div>
             </div>
