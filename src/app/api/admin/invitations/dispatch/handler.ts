@@ -12,6 +12,11 @@ import {
 import type { PersistedInvitation } from "@/db/invitation-repository";
 import type { PublicInvitationDeliveryPlan } from "@/invitations/delivery";
 import {
+  createInvitationDispatchPolicyConfigFromEnvironment,
+  type InvitationDispatchPolicyConfig,
+  type InvitationDispatchPolicyEnvironment
+} from "@/invitations/dispatch-policy.server";
+import {
   dispatchInvitationEmail,
   InvitationEmailDispatchPersistenceError,
   type InvitationEmailDispatchResult
@@ -33,7 +38,8 @@ import {
 } from "@/invitations/resend-provider.server";
 
 export interface InvitationEmailDispatchRouteEnvironment
-  extends ResendInvitationEmailEnvironment {
+  extends ResendInvitationEmailEnvironment,
+    InvitationDispatchPolicyEnvironment {
   KNOWLEDGEOS_APP_URL?: string;
 }
 
@@ -43,6 +49,9 @@ export interface InvitationEmailDispatchRouteDependencies {
   createProvider: (
     environment: ResendInvitationEmailEnvironment
   ) => InvitationEmailProvider;
+  createPolicy: (
+    environment: InvitationDispatchPolicyEnvironment
+  ) => InvitationDispatchPolicyConfig;
   dispatchInvitation: typeof dispatchInvitationEmail;
   environment: InvitationEmailDispatchRouteEnvironment;
 }
@@ -76,6 +85,7 @@ const defaultDependencies: InvitationEmailDispatchRouteDependencies = {
   requireSession,
   createDatabaseClient,
   createProvider: createResendInvitationEmailProviderFromEnvironment,
+  createPolicy: createInvitationDispatchPolicyConfigFromEnvironment,
   dispatchInvitation: dispatchInvitationEmail,
   environment: process.env
 };
@@ -347,9 +357,11 @@ export async function handleInvitationEmailDispatch(
     const payload = parseDispatchPayload(await readJsonPayload(request));
     const acceptanceBaseUrl = readAcceptanceBaseUrl(dependencies.environment);
     let provider: InvitationEmailProvider;
+    let policy: InvitationDispatchPolicyConfig;
 
     try {
       provider = dependencies.createProvider(dependencies.environment);
+      policy = dependencies.createPolicy(dependencies.environment);
     } catch {
       throw new InvitationEmailDispatchApiError(
         "dispatch_misconfigured",
@@ -365,12 +377,19 @@ export async function handleInvitationEmailDispatch(
         invitationId: payload.invitationId,
         attemptId: payload.attemptId,
         acceptanceBaseUrl,
-        provider
+        provider,
+        policy
       }
     );
+    const policyDenied =
+      result.status === "provider_failed" &&
+      (result.failure.code === "dispatch_cooldown_active" ||
+        result.failure.code === "dispatch_rate_limited");
     const status =
       result.status === "accepted_by_provider"
         ? 202
+        : policyDenied
+          ? 429
         : result.status === "provider_failed"
           ? 503
           : 200;

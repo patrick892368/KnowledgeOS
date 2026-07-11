@@ -210,6 +210,10 @@ export const invitationDeliveryAttempts = knowledgeos.table(
       table.status,
       table.createdAt
     ),
+    index("invitation_delivery_attempts_org_created_idx").on(
+      table.organizationId,
+      table.createdAt
+    ),
     index("invitation_delivery_attempts_invitation_created_idx").on(
       table.invitationId,
       table.createdAt

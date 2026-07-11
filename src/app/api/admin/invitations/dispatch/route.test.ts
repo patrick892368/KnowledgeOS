@@ -160,12 +160,18 @@ function createDependencies(input: {
   session?: AuthSession;
   authError?: unknown;
   providerError?: unknown;
+  policyError?: unknown;
   databaseError?: unknown;
   dispatchError?: unknown;
   result?: InvitationEmailDispatchResult;
   environment?: InvitationEmailDispatchRouteDependencies["environment"];
 } = {}) {
   const db = { name: "test-db" } as unknown as Database;
+  const policy = {
+    cooldownSeconds: 60,
+    rateLimitWindowSeconds: 3_600,
+    maxAttemptsPerWindow: 100
+  };
   const dependencies: InvitationEmailDispatchRouteDependencies = {
     requireSession: vi.fn(async () => {
       if (input.authError) {
@@ -185,6 +191,12 @@ function createDependencies(input: {
       }
       return provider;
     }),
+    createPolicy: vi.fn(() => {
+      if (input.policyError) {
+        throw input.policyError;
+      }
+      return policy;
+    }),
     dispatchInvitation: vi.fn(async () => {
       if (input.dispatchError) {
         throw input.dispatchError;
@@ -202,12 +214,12 @@ function createDependencies(input: {
       } satisfies InvitationEmailDispatchRouteDependencies["environment"])
   };
 
-  return { db, dependencies };
+  return { db, dependencies, policy };
 }
 
 describe("POST /api/admin/invitations/dispatch", () => {
   it("returns only Provider-accepted public state and server-controls authority", async () => {
-    const { db, dependencies } = createDependencies();
+    const { db, dependencies, policy } = createDependencies();
 
     const response = await handleInvitationEmailDispatch(
       request({ invitationId, attemptId }),
@@ -238,7 +250,8 @@ describe("POST /api/admin/invitations/dispatch", () => {
       invitationId,
       attemptId,
       acceptanceBaseUrl: "https://app.example.com/",
-      provider
+      provider,
+      policy
     });
     expect(JSON.stringify(payload)).not.toMatch(
       /one-time-delivery-token|tokenHash|rawToken|re_test_secret_key|auditEvents/i
@@ -299,6 +312,7 @@ describe("POST /api/admin/invitations/dispatch", () => {
       error: { code: "unauthenticated" }
     });
     expect(dependencies.createProvider).not.toHaveBeenCalled();
+    expect(dependencies.createPolicy).not.toHaveBeenCalled();
     expect(dependencies.createDatabaseClient).not.toHaveBeenCalled();
     expect(dependencies.dispatchInvitation).not.toHaveBeenCalled();
   });
@@ -322,6 +336,7 @@ describe("POST /api/admin/invitations/dispatch", () => {
     });
     expect(JSON.stringify(payload)).not.toContain("session backend");
     expect(dependencies.createProvider).not.toHaveBeenCalled();
+    expect(dependencies.createPolicy).not.toHaveBeenCalled();
     expect(dependencies.createDatabaseClient).not.toHaveBeenCalled();
   });
 
@@ -364,6 +379,7 @@ describe("POST /api/admin/invitations/dispatch", () => {
         error: { code: "invalid_payload" }
       });
       expect(dependencies.createProvider).not.toHaveBeenCalled();
+      expect(dependencies.createPolicy).not.toHaveBeenCalled();
       expect(dependencies.createDatabaseClient).not.toHaveBeenCalled();
       expect(dependencies.dispatchInvitation).not.toHaveBeenCalled();
     }
@@ -384,6 +400,7 @@ describe("POST /api/admin/invitations/dispatch", () => {
       }
     });
     expect(dependencies.createProvider).not.toHaveBeenCalled();
+    expect(dependencies.createPolicy).not.toHaveBeenCalled();
     expect(dependencies.createDatabaseClient).not.toHaveBeenCalled();
   });
 
@@ -402,6 +419,51 @@ describe("POST /api/admin/invitations/dispatch", () => {
     expect(JSON.stringify(payload)).not.toMatch(/re_test_secret_key|unsafe sender/);
     expect(dependencies.createDatabaseClient).not.toHaveBeenCalled();
     expect(dependencies.dispatchInvitation).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes dispatch policy configuration failures before database work", async () => {
+    const { dependencies } = createDependencies({
+      policyError: new Error("unsafe policy environment value 999999")
+    });
+    const response = await handleInvitationEmailDispatch(
+      request({ invitationId }),
+      dependencies
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload).toMatchObject({ error: { code: "dispatch_misconfigured" } });
+    expect(JSON.stringify(payload)).not.toMatch(/unsafe policy|999999/);
+    expect(dependencies.createDatabaseClient).not.toHaveBeenCalled();
+    expect(dependencies.dispatchInvitation).not.toHaveBeenCalled();
+  });
+
+  it("returns HTTP 429 for persisted cooldown and organization rate-limit denial", async () => {
+    for (const code of [
+      "dispatch_cooldown_active",
+      "dispatch_rate_limited"
+    ] as const) {
+      const { dependencies } = createDependencies({
+        result: {
+          ...failedResult,
+          failure: { code, recoverable: true },
+          attempt: { ...failedAttempt, failureCode: code }
+        } as InvitationEmailDispatchResult
+      });
+      const response = await handleInvitationEmailDispatch(
+        request({ invitationId, attemptId }),
+        dependencies
+      );
+      const payload = await response.json();
+
+      expect(response.status).toBe(429);
+      expect(payload).toMatchObject({
+        mode: "provider_failed",
+        failure: { code },
+        attempt: { status: "provider_failed", failureCode: code }
+      });
+      expect(payload).not.toHaveProperty("receipt");
+    }
   });
 
   it("returns a generic database-unavailable error without leaking internals", async () => {

@@ -15,6 +15,11 @@ import type { auditEvents } from "@/db/schema";
 
 import type { PublicInvitationDeliveryPlan } from "./delivery";
 import {
+  reviewInvitationDispatchPolicy,
+  type InvitationDispatchPolicyConfig,
+  type InvitationDispatchPolicyFailureCode
+} from "./dispatch-policy.server";
+import {
   deliverInvitationEmail,
   InvitationEmailDeliveryError,
   parseInvitationEmailProviderName,
@@ -27,6 +32,7 @@ export interface InvitationEmailDispatchDependencies {
   reviewDelivery: typeof prepareInvitationResend;
   rotateToken: typeof rotateInvitationDeliveryToken;
   persistAttempt: typeof persistInvitationDeliveryAttempt;
+  reviewPolicy: typeof reviewInvitationDispatchPolicy;
   deliverEmail: typeof deliverInvitationEmail;
   markProviderAccepted: typeof markInvitationDeliveryAttemptProviderAccepted;
   markProviderFailed: typeof markInvitationDeliveryAttemptProviderFailed;
@@ -34,7 +40,9 @@ export interface InvitationEmailDispatchDependencies {
 
 export type InvitationEmailDispatchFailureCode =
   | InvitationEmailDeliveryErrorCode
+  | InvitationDispatchPolicyFailureCode
   | "provider_failed"
+  | "policy_check_failed"
   | "rotation_failed";
 
 export type InvitationEmailDispatchPersistenceErrorCode =
@@ -101,6 +109,7 @@ const defaultDependencies: InvitationEmailDispatchDependencies = {
   reviewDelivery: prepareInvitationResend,
   rotateToken: rotateInvitationDeliveryToken,
   persistAttempt: persistInvitationDeliveryAttempt,
+  reviewPolicy: reviewInvitationDispatchPolicy,
   deliverEmail: deliverInvitationEmail,
   markProviderAccepted: markInvitationDeliveryAttemptProviderAccepted,
   markProviderFailed: markInvitationDeliveryAttemptProviderFailed
@@ -178,6 +187,7 @@ export async function dispatchInvitationEmail(
     now?: Date;
     deliveryTtlHours?: number;
     rawToken?: string;
+    policy?: InvitationDispatchPolicyConfig;
   },
   dependencies: InvitationEmailDispatchDependencies = defaultDependencies
 ): Promise<InvitationEmailDispatchResult> {
@@ -228,6 +238,74 @@ export async function dispatchInvitationEmail(
       attempt: transition.attempt,
       failure: {
         code: configurationFailure,
+        recoverable: true
+      },
+      auditEvents: {
+        review: review.auditEvent,
+        preparation: preparation.auditEvent,
+        transition: transition.auditEvent
+      },
+      tokenExposure: "not_exposed"
+    };
+  }
+
+  let policyDecision: Awaited<
+    ReturnType<typeof reviewInvitationDispatchPolicy>
+  >;
+
+  try {
+    policyDecision = await dependencies.reviewPolicy(db, {
+      session: input.session,
+      invitationId: input.invitationId,
+      currentAttemptId: preparation.attempt.id,
+      policy: input.policy,
+      now: dispatchAt
+    });
+  } catch {
+    const transition = await persistFailureOrThrow({
+      db,
+      dependencies,
+      session: input.session,
+      attemptId: preparation.attempt.id,
+      failureCode: "policy_check_failed",
+      failedAt: dispatchAt
+    });
+
+    return {
+      status: "provider_failed",
+      invitation: review.invitation,
+      delivery: review.delivery,
+      attempt: transition.attempt,
+      failure: {
+        code: "policy_check_failed",
+        recoverable: true
+      },
+      auditEvents: {
+        review: review.auditEvent,
+        preparation: preparation.auditEvent,
+        transition: transition.auditEvent
+      },
+      tokenExposure: "not_exposed"
+    };
+  }
+
+  if (policyDecision.status === "denied") {
+    const transition = await persistFailureOrThrow({
+      db,
+      dependencies,
+      session: input.session,
+      attemptId: preparation.attempt.id,
+      failureCode: policyDecision.failureCode,
+      failedAt: dispatchAt
+    });
+
+    return {
+      status: "provider_failed",
+      invitation: review.invitation,
+      delivery: review.delivery,
+      attempt: transition.attempt,
+      failure: {
+        code: policyDecision.failureCode,
         recoverable: true
       },
       auditEvents: {

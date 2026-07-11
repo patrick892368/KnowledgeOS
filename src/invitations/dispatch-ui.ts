@@ -8,6 +8,7 @@ export type InvitationDispatchUiPhase =
   | "accepted_by_provider"
   | "existing_attempt"
   | "provider_failed"
+  | "policy_denied"
   | "reconciliation_required"
   | "request_failed";
 
@@ -290,14 +291,23 @@ export function parseInvitationDispatchUiOutcome(
       return invalidResponse();
     }
 
+    const policyDenied =
+      failureCode === "dispatch_cooldown_active" ||
+      failureCode === "dispatch_rate_limited";
+
     return {
       invitationId,
       attemptId,
-      phase: "provider_failed",
+      phase: policyDenied ? "policy_denied" : "provider_failed",
       attemptStatus,
       provider,
       failureCode,
-      message: "Provider did not accept this invitation email."
+      message:
+        failureCode === "dispatch_cooldown_active"
+          ? "Invitation dispatch cooldown is active."
+          : failureCode === "dispatch_rate_limited"
+            ? "Organization invitation dispatch rate limit is active."
+            : "Provider did not accept this invitation email."
     };
   }
 
@@ -370,6 +380,10 @@ export function invitationDispatchActionLabel(
       state.attemptStatus === "accepted_by_provider")
   ) {
     return "Accepted";
+  }
+
+  if (state.phase === "policy_denied") {
+    return "Limited";
   }
 
   return "Review";

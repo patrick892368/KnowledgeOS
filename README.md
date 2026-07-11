@@ -34,6 +34,9 @@ KNOWLEDGEOS_APP_URL='https://knowledge.example.com/'
 RESEND_API_KEY=re_replace_with_a_server_only_key
 KNOWLEDGEOS_INVITATION_FROM_EMAIL='KnowledgeOS <invitations@example.com>'
 KNOWLEDGEOS_RESEND_TIMEOUT_MS=10000
+KNOWLEDGEOS_INVITATION_DISPATCH_COOLDOWN_SECONDS=60
+KNOWLEDGEOS_INVITATION_DISPATCH_RATE_WINDOW_SECONDS=3600
+KNOWLEDGEOS_INVITATION_DISPATCH_RATE_MAX=100
 ```
 
 The sender domain must be verified in Resend. Keep `RESEND_API_KEY` server-only and leave the adapter disabled until the configuration is complete.

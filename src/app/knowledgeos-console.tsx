@@ -1195,6 +1195,7 @@ export function KnowledgeOSConsole() {
       if (
         outcome.phase === "request_failed" ||
         outcome.phase === "provider_failed" ||
+        outcome.phase === "policy_denied" ||
         outcome.phase === "reconciliation_required"
       ) {
         setError(outcome.message);
@@ -4226,9 +4227,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-077 invitation dispatch UI</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-078 invitation dispatch policy</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-078 invitation dispatch policy</span>
+                  <span>T-079 dispatch reconciliation API</span>
                 </div>
               </div>
             </div>

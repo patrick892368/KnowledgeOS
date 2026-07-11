@@ -155,6 +155,32 @@ describe("parseInvitationDispatchUiOutcome", () => {
     expect(canStartInvitationDispatch(state)).toBe(true);
   });
 
+  it("maps persisted cooldown and rate-limit denial to non-retryable policy state", () => {
+    for (const failureCode of [
+      "dispatch_cooldown_active",
+      "dispatch_rate_limited"
+    ] as const) {
+      const state = parseInvitationDispatchUiOutcome(
+        {
+          ...basePayload("provider_failed", "provider_failed"),
+          attempt: {
+            ...attempt("provider_failed"),
+            failureCode
+          },
+          failure: { code: failureCode, recoverable: true }
+        },
+        expected
+      );
+
+      expect(state).toMatchObject({
+        phase: "policy_denied",
+        failureCode
+      });
+      expect(canStartInvitationDispatch(state)).toBe(false);
+      expect(invitationDispatchActionLabel(state)).toBe("Limited");
+    }
+  });
+
   it("preserves existing attempt status without claiming a new send", () => {
     for (const status of [
       "prepared",

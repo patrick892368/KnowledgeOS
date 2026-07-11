@@ -130,6 +130,8 @@ function createDependencies(input?: {
   rotationError?: unknown;
   acceptedTransitionError?: unknown;
   failedTransitionError?: unknown;
+  policyError?: unknown;
+  policyFailureCode?: "dispatch_cooldown_active" | "dispatch_rate_limited";
 }): InvitationEmailDispatchDependencies {
   const steps = input?.steps ?? [];
 
@@ -164,6 +166,19 @@ function createDependencies(input?: {
           provider: attemptInput.provider
         }
       };
+    }),
+    reviewPolicy: vi.fn(async () => {
+      steps.push("policy");
+      if (input?.policyError) {
+        throw input.policyError;
+      }
+
+      return input?.policyFailureCode
+        ? {
+            status: "denied" as const,
+            failureCode: input.policyFailureCode
+          }
+        : { status: "allowed" as const };
     }),
     deliverEmail: vi.fn(async () => {
       steps.push("provider");
@@ -226,6 +241,7 @@ describe("dispatchInvitationEmail", () => {
     expect(steps).toEqual([
       "review",
       "prepare",
+      "policy",
       "rotate",
       "provider",
       "accepted"
@@ -277,6 +293,7 @@ describe("dispatchInvitationEmail", () => {
       tokenExposure: "not_exposed"
     });
     expect(dependencies.rotateToken).not.toHaveBeenCalled();
+    expect(dependencies.reviewPolicy).not.toHaveBeenCalled();
     expect(dependencies.deliverEmail).not.toHaveBeenCalled();
   });
 
@@ -307,6 +324,7 @@ describe("dispatchInvitationEmail", () => {
     expect(steps).toEqual([
       "review",
       "prepare",
+      "policy",
       "rotate",
       "provider",
       "failed"
@@ -348,6 +366,7 @@ describe("dispatchInvitationEmail", () => {
       expect.objectContaining({ provider: "unconfigured" })
     );
     expect(dependencies.rotateToken).not.toHaveBeenCalled();
+    expect(dependencies.reviewPolicy).not.toHaveBeenCalled();
     expect(dependencies.deliverEmail).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       status: "provider_failed",
@@ -377,7 +396,13 @@ describe("dispatchInvitationEmail", () => {
       dependencies
     );
 
-    expect(steps).toEqual(["review", "prepare", "rotate", "failed"]);
+    expect(steps).toEqual([
+      "review",
+      "prepare",
+      "policy",
+      "rotate",
+      "failed"
+    ]);
     expect(dependencies.deliverEmail).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       status: "provider_failed",
@@ -385,6 +410,74 @@ describe("dispatchInvitationEmail", () => {
         code: "rotation_failed"
       }
     });
+  });
+
+  it("persists cooldown and rate-limit denials before rotation or Provider work", async () => {
+    for (const failureCode of [
+      "dispatch_cooldown_active",
+      "dispatch_rate_limited"
+    ] as const) {
+      const steps: string[] = [];
+      const dependencies = createDependencies({
+        steps,
+        policyFailureCode: failureCode
+      });
+
+      const result = await dispatchInvitationEmail(
+        db,
+        {
+          session,
+          invitationId: invitation.id,
+          acceptanceBaseUrl: "https://app.example.com/",
+          provider,
+          attemptId,
+          now
+        },
+        dependencies
+      );
+
+      expect(steps).toEqual(["review", "prepare", "policy", "failed"]);
+      expect(dependencies.rotateToken).not.toHaveBeenCalled();
+      expect(dependencies.deliverEmail).not.toHaveBeenCalled();
+      expect(dependencies.markProviderFailed).toHaveBeenCalledWith(
+        db,
+        expect.objectContaining({ failureCode })
+      );
+      expect(result).toMatchObject({
+        status: "provider_failed",
+        failure: { code: failureCode }
+      });
+    }
+  });
+
+  it("persists policy-check failure before rotation or Provider work", async () => {
+    const steps: string[] = [];
+    const dependencies = createDependencies({
+      steps,
+      policyError: new Error("policy database leaked a secret")
+    });
+
+    const result = await dispatchInvitationEmail(
+      db,
+      {
+        session,
+        invitationId: invitation.id,
+        acceptanceBaseUrl: "https://app.example.com/",
+        provider,
+        attemptId,
+        now
+      },
+      dependencies
+    );
+
+    expect(steps).toEqual(["review", "prepare", "policy", "failed"]);
+    expect(dependencies.rotateToken).not.toHaveBeenCalled();
+    expect(dependencies.deliverEmail).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "provider_failed",
+      failure: { code: "policy_check_failed" }
+    });
+    expect(JSON.stringify(result)).not.toContain("policy database leaked");
   });
 
   it("stops before rotation and Provider when attempt reservation fails", async () => {
