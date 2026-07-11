@@ -96,7 +96,13 @@ describe("Resend invitation email provider", () => {
       from: "KnowledgeOS <invitations@example.com>",
       to: [payload.recipient],
       subject: payload.subject,
-      text: expect.stringContaining(payload.acceptanceContextUrl)
+      text: expect.stringContaining(payload.acceptanceContextUrl),
+      tags: [
+        {
+          name: "knowledgeos_attempt_id",
+          value: deliveryAttemptId
+        }
+      ]
     });
     expect(request.body).toContain(oneTimeToken);
     expect(request.signal).toBeInstanceOf(AbortSignal);

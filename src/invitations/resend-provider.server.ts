@@ -295,7 +295,13 @@ export function createResendInvitationEmailProvider(
             from,
             to: [payload.recipient],
             subject: payload.subject,
-            text: createEmailText(payload)
+            text: createEmailText(payload),
+            tags: [
+              {
+                name: "knowledgeos_attempt_id",
+                value: payload.deliveryAttemptId
+              }
+            ]
           }),
           signal: controller.signal
         });

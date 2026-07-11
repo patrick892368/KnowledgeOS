@@ -13,7 +13,7 @@ The current application includes:
 - Local grounded answer generation with citation verification.
 - Connector status tracking.
 - Plan-only workflow template and workflow run planning foundations.
-- Audited invitation acceptance, resend, delivery attempts, a disabled-by-default Resend adapter, and a protected dispatch API.
+- Audited invitation acceptance, Resend dispatch, policy controls, read-only reconciliation review, and disabled-by-default webhook verification foundations.
 
 ## Development
 
@@ -34,13 +34,15 @@ KNOWLEDGEOS_APP_URL='https://knowledge.example.com/'
 RESEND_API_KEY=re_replace_with_a_server_only_key
 KNOWLEDGEOS_INVITATION_FROM_EMAIL='KnowledgeOS <invitations@example.com>'
 KNOWLEDGEOS_RESEND_TIMEOUT_MS=10000
+KNOWLEDGEOS_RESEND_WEBHOOK_ENABLED=false
+RESEND_WEBHOOK_SECRET=
 KNOWLEDGEOS_INVITATION_DISPATCH_COOLDOWN_SECONDS=60
 KNOWLEDGEOS_INVITATION_DISPATCH_RATE_WINDOW_SECONDS=3600
 KNOWLEDGEOS_INVITATION_DISPATCH_RATE_MAX=100
 KNOWLEDGEOS_INVITATION_RECONCILIATION_STALE_SECONDS=300
 ```
 
-The sender domain must be verified in Resend. Keep `RESEND_API_KEY` server-only and leave the adapter disabled until the configuration is complete.
+The sender domain must be verified in Resend. Keep `RESEND_API_KEY` and `RESEND_WEBHOOK_SECRET` server-only. Webhook verification is disabled by default and does not expose an ingestion endpoint or persist events yet.
 
 ## Verification
 
