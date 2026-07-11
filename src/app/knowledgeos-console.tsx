@@ -4904,9 +4904,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-086 Evidence-backed reconciliation UI</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-087 External connector registration contract</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-087 External connector registration contract</span>
+                  <span>T-088 External connector persistence API</span>
                 </div>
               </div>
             </div>
