@@ -678,6 +678,110 @@ button {
   justify-content: space-between;
 }
 
+.invitation-evidence-review {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.invitation-evidence-header,
+.invitation-reconciliation-gate,
+.invitation-reconciliation-result {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.invitation-evidence-header > div:first-child,
+.invitation-reconciliation-gate > div,
+.invitation-reconciliation-result > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.invitation-evidence-header span,
+.invitation-reconciliation-gate span,
+.invitation-reconciliation-result span {
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.invitation-evidence-header small,
+.invitation-evidence-row small,
+.invitation-reconciliation-gate small,
+.invitation-reconciliation-result small {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.invitation-evidence-list {
+  display: grid;
+  gap: 8px;
+}
+
+.invitation-evidence-row {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns:
+    minmax(210px, 1.2fr)
+    minmax(180px, 1fr)
+    minmax(180px, 0.9fr)
+    minmax(110px, auto);
+  min-width: 0;
+  padding: 11px 12px;
+}
+
+.invitation-evidence-row.selected {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.invitation-evidence-identity,
+.invitation-evidence-provider,
+.invitation-evidence-time {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.invitation-evidence-identity span,
+.invitation-evidence-provider span,
+.invitation-evidence-time span {
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.invitation-reconciliation-gate {
+  background: var(--surface-muted);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.invitation-reconciliation-gate .primary-button,
+.invitation-reconciliation-gate .icon-button {
+  flex: 0 0 auto;
+  min-width: 190px;
+}
+
+.invitation-reconciliation-result {
+  background: #e7f8ee;
+  border: 1px solid #9ad7b1;
+  border-radius: 8px;
+  color: var(--success);
+  justify-content: flex-start;
+  padding: 11px 12px;
+}
+
 .invitation-review-grid {
   display: grid;
   gap: 10px;
@@ -1543,6 +1647,11 @@ button {
   .invitation-reconciliation-row.status-accepted_by_provider > strong {
     background: #173b27;
   }
+
+  .invitation-reconciliation-result {
+    background: #173b27;
+    border-color: #285f3f;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -1618,6 +1727,7 @@ button {
   .invitation-reconciliation-toolbar,
   .invitation-reconciliation-summary,
   .invitation-reconciliation-row,
+  .invitation-evidence-row,
   .invitation-row,
   .permission-grant-form,
   .permission-grant-actions,
@@ -1629,6 +1739,18 @@ button {
   .membership-row {
     align-items: stretch;
     grid-template-columns: 1fr;
+  }
+
+  .invitation-evidence-header,
+  .invitation-reconciliation-gate {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .invitation-reconciliation-gate .primary-button,
+  .invitation-reconciliation-gate .icon-button {
+    min-width: 0;
+    width: 100%;
   }
 
   .invitation-row,

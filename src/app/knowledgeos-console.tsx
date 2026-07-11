@@ -39,6 +39,15 @@ import {
 import type { NormalizedIngestionResult } from "@/ingestion/types";
 import { parseInvitationAcceptanceDeepLink } from "@/invitations/deep-link";
 import {
+  createInvitationDeliveryEvidenceReviewQuery,
+  createInvitationDeliveryReconciliationRequest,
+  parseInvitationDeliveryEvidenceUiResponse,
+  parseInvitationDeliveryReconciliationUiResponse,
+  type InvitationDeliveryEvidenceUiRecord,
+  type InvitationDeliveryEvidenceUiResult,
+  type InvitationDeliveryReconciliationUiResult
+} from "@/invitations/delivery-evidence-ui";
+import {
   createInvitationDispatchReviewQuery,
   parseInvitationDispatchReviewUiResponse,
   type InvitationDispatchReviewUiResult
@@ -432,6 +441,18 @@ export function KnowledgeOSConsole() {
     useState<InvitationDispatchReviewUiResult | null>(null);
   const [invitationDispatchReviewIssue, setInvitationDispatchReviewIssue] =
     useState<string | null>(null);
+  const [selectedInvitationDeliveryAttemptId, setSelectedInvitationDeliveryAttemptId] =
+    useState<string | null>(null);
+  const [invitationDeliveryEvidenceReview, setInvitationDeliveryEvidenceReview] =
+    useState<InvitationDeliveryEvidenceUiResult | null>(null);
+  const [invitationDeliveryEvidenceIssue, setInvitationDeliveryEvidenceIssue] =
+    useState<string | null>(null);
+  const [selectedInvitationDeliveryEvidenceId, setSelectedInvitationDeliveryEvidenceId] =
+    useState<string | null>(null);
+  const [pendingInvitationDeliveryEvidenceId, setPendingInvitationDeliveryEvidenceId] =
+    useState<string | null>(null);
+  const [invitationDeliveryReconciliationResult, setInvitationDeliveryReconciliationResult] =
+    useState<InvitationDeliveryReconciliationUiResult | null>(null);
   const [pendingDispatchInvitationId, setPendingDispatchInvitationId] =
     useState<string | null>(null);
   const [pendingRevokeInvitationId, setPendingRevokeInvitationId] =
@@ -488,6 +509,8 @@ export function KnowledgeOSConsole() {
     | "invitations"
     | "invitation-dispatch"
     | "invitation-dispatch-review"
+    | "invitation-delivery-evidence"
+    | "invitation-delivery-reconciliation"
     | "invitation-revoke"
     | "invitation-accept"
     | "audit-events"
@@ -702,6 +725,23 @@ export function KnowledgeOSConsole() {
       }),
     [invitations]
   );
+  const selectedInvitationDispatchReview = useMemo(
+    () =>
+      invitationDispatchReview?.reviews.find(
+        (review) => review.id === selectedInvitationDeliveryAttemptId
+      ) ?? null,
+    [invitationDispatchReview, selectedInvitationDeliveryAttemptId]
+  );
+  const selectedInvitationDeliveryEvidence = useMemo(
+    () =>
+      invitationDeliveryEvidenceReview?.evidence.find(
+        (evidence) => evidence.id === selectedInvitationDeliveryEvidenceId
+      ) ?? null,
+    [
+      invitationDeliveryEvidenceReview,
+      selectedInvitationDeliveryEvidenceId
+    ]
+  );
 
   useEffect(() => {
     void loadCurrentSession({ quiet: true });
@@ -771,6 +811,7 @@ export function KnowledgeOSConsole() {
       setInvitations([]);
       setInvitationDispatchReview(null);
       setInvitationDispatchReviewIssue(null);
+      clearInvitationDeliveryEvidenceReview();
       setPersistedKpiTelemetryEvents([]);
       setKpiTelemetryPersistence(null);
       setPendingRevokeInvitationId(null);
@@ -1126,55 +1167,206 @@ export function KnowledgeOSConsole() {
     }
   }
 
+  function clearInvitationDeliveryEvidenceReview(): void {
+    setSelectedInvitationDeliveryAttemptId(null);
+    setInvitationDeliveryEvidenceReview(null);
+    setInvitationDeliveryEvidenceIssue(null);
+    setSelectedInvitationDeliveryEvidenceId(null);
+    setPendingInvitationDeliveryEvidenceId(null);
+    setInvitationDeliveryReconciliationResult(null);
+  }
+
+  async function requestInvitationDispatchReviewData(
+    invitationId: string
+  ): Promise<InvitationDispatchReviewUiResult> {
+    const query = createInvitationDispatchReviewQuery({
+      ...(invitationId ? { invitationId } : {}),
+      limit: 50
+    });
+    const payload = await readApiResponse<unknown>(
+      await fetch(`/api/admin/invitations/dispatch${query}`, {
+        method: "GET",
+        credentials: "same-origin"
+      })
+    );
+
+    return parseInvitationDispatchReviewUiResponse(payload, {
+      ...(invitationId ? { invitationId } : {})
+    });
+  }
+
+  async function requestInvitationDeliveryEvidenceData(
+    review: InvitationDispatchReviewUiResult["reviews"][number]
+  ): Promise<InvitationDeliveryEvidenceUiResult> {
+    const query = createInvitationDeliveryEvidenceReviewQuery({
+      attemptId: review.id,
+      limit: 50
+    });
+    const payload = await readApiResponse<unknown>(
+      await fetch(`/api/admin/invitations/dispatch/evidence${query}`, {
+        method: "GET",
+        credentials: "same-origin"
+      })
+    );
+
+    return parseInvitationDeliveryEvidenceUiResponse(payload, {
+      attemptId: review.id,
+      invitationId: review.invitationId,
+      provider: review.provider
+    });
+  }
+
   async function loadInvitationDispatchReview() {
     if (!canManageCurrentMemberships) {
       setInvitationDispatchReview(null);
       setInvitationDispatchReviewIssue(
         "Owner or admin signed session is required."
       );
+      clearInvitationDeliveryEvidenceReview();
       return;
     }
 
     const invitationId = invitationDispatchReviewFilter.trim();
-    let query: string;
-
-    try {
-      query = createInvitationDispatchReviewQuery({
-        ...(invitationId ? { invitationId } : {}),
-        limit: 50
-      });
-    } catch (caughtError) {
-      setInvitationDispatchReview(null);
-      setInvitationDispatchReviewIssue(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "Invitation dispatch review filter is invalid."
-      );
-      return;
-    }
 
     setBusyAction("invitation-dispatch-review");
     setInvitationDispatchReview(null);
     setInvitationDispatchReviewIssue(null);
+    clearInvitationDeliveryEvidenceReview();
 
     try {
-      const payload = await readApiResponse<unknown>(
-        await fetch(`/api/admin/invitations/dispatch${query}`, {
-          method: "GET",
-          credentials: "same-origin"
-        })
+      setInvitationDispatchReview(
+        await requestInvitationDispatchReviewData(invitationId)
       );
-      const review = parseInvitationDispatchReviewUiResponse(payload, {
-        ...(invitationId ? { invitationId } : {})
-      });
-
-      setInvitationDispatchReview(review);
     } catch (caughtError) {
       setInvitationDispatchReview(null);
       setInvitationDispatchReviewIssue(
         caughtError instanceof Error
           ? caughtError.message
           : "Invitation dispatch review failed to load."
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function loadInvitationDeliveryEvidence(
+    review: InvitationDispatchReviewUiResult["reviews"][number]
+  ) {
+    if (!canManageCurrentMemberships) {
+      clearInvitationDeliveryEvidenceReview();
+      setInvitationDeliveryEvidenceIssue(
+        "Owner or admin signed session is required."
+      );
+      return;
+    }
+
+    setBusyAction("invitation-delivery-evidence");
+    setSelectedInvitationDeliveryAttemptId(review.id);
+    setInvitationDeliveryEvidenceReview(null);
+    setInvitationDeliveryEvidenceIssue(null);
+    setSelectedInvitationDeliveryEvidenceId(null);
+    setPendingInvitationDeliveryEvidenceId(null);
+    setInvitationDeliveryReconciliationResult(null);
+
+    try {
+      setInvitationDeliveryEvidenceReview(
+        await requestInvitationDeliveryEvidenceData(review)
+      );
+    } catch (caughtError) {
+      setInvitationDeliveryEvidenceIssue(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Invitation delivery evidence failed to load."
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  function selectInvitationDeliveryEvidence(evidenceId: string): void {
+    setSelectedInvitationDeliveryEvidenceId(evidenceId);
+    setPendingInvitationDeliveryEvidenceId(null);
+    setInvitationDeliveryReconciliationResult(null);
+    setInvitationDeliveryEvidenceIssue(null);
+  }
+
+  async function reconcileInvitationDelivery(
+    review: InvitationDispatchReviewUiResult["reviews"][number],
+    evidence: InvitationDeliveryEvidenceUiRecord
+  ) {
+    let request: ReturnType<
+      typeof createInvitationDeliveryReconciliationRequest
+    >;
+
+    try {
+      request = createInvitationDeliveryReconciliationRequest({
+        review,
+        evidence
+      });
+    } catch (caughtError) {
+      setInvitationDeliveryEvidenceIssue(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Invitation delivery evidence is not eligible for reconciliation."
+      );
+      return;
+    }
+
+    if (pendingInvitationDeliveryEvidenceId !== evidence.id) {
+      setPendingInvitationDeliveryEvidenceId(evidence.id);
+      setInvitationDeliveryReconciliationResult(null);
+      setInvitationDeliveryEvidenceIssue(null);
+      return;
+    }
+
+    if (!canManageCurrentMemberships) {
+      setInvitationDeliveryEvidenceIssue(
+        "Owner or admin signed session is required."
+      );
+      return;
+    }
+
+    setBusyAction("invitation-delivery-reconciliation");
+    setInvitationDeliveryEvidenceIssue(null);
+    setInvitationDeliveryReconciliationResult(null);
+
+    try {
+      const payload = await readApiResponse<unknown>(
+        await fetch("/api/admin/invitations/dispatch/reconcile", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(request)
+        })
+      );
+      const result = parseInvitationDeliveryReconciliationUiResponse(
+        payload,
+        { request, review, evidence }
+      );
+
+      setInvitationDeliveryReconciliationResult(result);
+      setPendingInvitationDeliveryEvidenceId(null);
+
+      try {
+        const [refreshedReview, refreshedEvidence] = await Promise.all([
+          requestInvitationDispatchReviewData(
+            invitationDispatchReviewFilter.trim()
+          ),
+          requestInvitationDeliveryEvidenceData(review)
+        ]);
+
+        setInvitationDispatchReview(refreshedReview);
+        setInvitationDeliveryEvidenceReview(refreshedEvidence);
+      } catch {
+        setInvitationDeliveryEvidenceIssue(
+          "Reconciliation completed, but authoritative refresh failed."
+        );
+      }
+    } catch (caughtError) {
+      setInvitationDeliveryEvidenceIssue(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Invitation delivery reconciliation failed."
       );
     } finally {
       setBusyAction(null);
@@ -2512,7 +2704,11 @@ export function KnowledgeOSConsole() {
             </div>
 
             <div
-              aria-busy={busyAction === "invitation-dispatch-review"}
+              aria-busy={
+                busyAction === "invitation-dispatch-review" ||
+                busyAction === "invitation-delivery-evidence" ||
+                busyAction === "invitation-delivery-reconciliation"
+              }
               className="invitation-reconciliation"
             >
               <div className="invitation-list-header">
@@ -2520,7 +2716,7 @@ export function KnowledgeOSConsole() {
                 <div className="invitation-list-header-meta">
                   <span className="status-pill">
                     <ShieldCheck size={13} />
-                    Read only
+                    Evidence gated
                   </span>
                   <span className="status-pill">
                     <Mail size={13} />
@@ -2552,6 +2748,7 @@ export function KnowledgeOSConsole() {
                       setInvitationDispatchReviewFilter(event.target.value);
                       setInvitationDispatchReview(null);
                       setInvitationDispatchReviewIssue(null);
+                      clearInvitationDeliveryEvidenceReview();
                     }}
                   />
                 </label>
@@ -2632,6 +2829,26 @@ export function KnowledgeOSConsole() {
                         <div className="invitation-reconciliation-action">
                           <span>{formatStatus(review.recommendedAction)}</span>
                           <small>Age {formatDuration(review.ageSeconds)}</small>
+                          <button
+                            aria-expanded={
+                              selectedInvitationDeliveryAttemptId === review.id
+                            }
+                            className="icon-button"
+                            disabled={busyAction !== null}
+                            onClick={() =>
+                              void loadInvitationDeliveryEvidence(review)
+                            }
+                            title="Load Provider evidence"
+                            type="button"
+                          >
+                            <Search size={14} />
+                            {busyAction === "invitation-delivery-evidence" &&
+                            selectedInvitationDeliveryAttemptId === review.id
+                              ? "Loading"
+                              : selectedInvitationDeliveryAttemptId === review.id
+                                ? "Refresh evidence"
+                                : "Evidence"}
+                          </button>
                         </div>
                       </article>
                     ))}
@@ -2652,6 +2869,187 @@ export function KnowledgeOSConsole() {
                       {invitationDispatchReview.summary.totalCount} attempts
                     </span>
                   </div>
+
+                  {selectedInvitationDeliveryAttemptId ? (
+                    <div className="invitation-evidence-review">
+                      <div className="invitation-evidence-header">
+                        <div>
+                          <span>Provider evidence</span>
+                          <small>
+                            Attempt {selectedInvitationDeliveryAttemptId}
+                          </small>
+                        </div>
+                        <div className="invitation-list-header-meta">
+                          <span className="status-pill">
+                            <ShieldCheck size={13} />
+                            Verified events
+                          </span>
+                          <span className="status-pill">No inbox claim</span>
+                          <span className="count-pill">
+                            {invitationDeliveryEvidenceReview?.count ?? 0}
+                          </span>
+                        </div>
+                      </div>
+
+                      {invitationDeliveryEvidenceReview ? (
+                        <div className="invitation-evidence-list">
+                          {invitationDeliveryEvidenceReview.evidence.map(
+                            (evidence) => {
+                              const selected =
+                                selectedInvitationDeliveryEvidenceId ===
+                                evidence.id;
+                              const reconciliationEligible =
+                                selectedInvitationDispatchReview?.reviewState ===
+                                  "reconciliation_required" &&
+                                selectedInvitationDispatchReview.attemptStatus ===
+                                  "prepared";
+
+                              return (
+                                <article
+                                  className={`invitation-evidence-row${
+                                    selected ? " selected" : ""
+                                  }`}
+                                  key={evidence.id}
+                                >
+                                  <div className="invitation-evidence-identity">
+                                    <span>
+                                      {formatStatus(evidence.evidenceType)}
+                                    </span>
+                                    <small>Evidence {evidence.id}</small>
+                                    <small>Event {evidence.providerEventId}</small>
+                                  </div>
+                                  <div className="invitation-evidence-provider">
+                                    <span>{evidence.providerEventType}</span>
+                                    <small>
+                                      Message {evidence.providerMessageId}
+                                    </small>
+                                  </div>
+                                  <div className="invitation-evidence-time">
+                                    <span>
+                                      Occurred {formatDateTime(evidence.occurredAt)}
+                                    </span>
+                                    <small>
+                                      Received {formatDateTime(evidence.receivedAt)}
+                                    </small>
+                                  </div>
+                                  {reconciliationEligible ? (
+                                    <button
+                                      aria-pressed={selected}
+                                      className="icon-button"
+                                      disabled={busyAction !== null}
+                                      onClick={() =>
+                                        selectInvitationDeliveryEvidence(
+                                          evidence.id
+                                        )
+                                      }
+                                      type="button"
+                                    >
+                                      <CheckCircle2 size={14} />
+                                      {selected ? "Selected" : "Select"}
+                                    </button>
+                                  ) : (
+                                    <span className="status-pill">
+                                      Inspection only
+                                    </span>
+                                  )}
+                                </article>
+                              );
+                            }
+                          )}
+                          {invitationDeliveryEvidenceReview.evidence.length ===
+                          0 ? (
+                            <div className="empty-state">
+                              No verified evidence for this attempt
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div
+                          aria-live="polite"
+                          className="empty-state"
+                          role="status"
+                        >
+                          {busyAction === "invitation-delivery-evidence"
+                            ? "Loading Provider evidence"
+                            : invitationDeliveryEvidenceIssue ??
+                              "No evidence loaded"}
+                        </div>
+                      )}
+
+                      {selectedInvitationDispatchReview &&
+                      selectedInvitationDeliveryEvidence ? (
+                        <div className="invitation-reconciliation-gate">
+                          <div>
+                            <span>Selected evidence</span>
+                            <strong>
+                              {formatStatus(
+                                selectedInvitationDeliveryEvidence.evidenceType
+                              )}
+                            </strong>
+                            <small>
+                              {selectedInvitationDeliveryEvidence.id}
+                            </small>
+                          </div>
+                          <button
+                            className={
+                              pendingInvitationDeliveryEvidenceId ===
+                              selectedInvitationDeliveryEvidence.id
+                                ? "primary-button"
+                                : "icon-button"
+                            }
+                            disabled={
+                              busyAction !== null ||
+                              selectedInvitationDispatchReview.reviewState !==
+                                "reconciliation_required"
+                            }
+                            onClick={() =>
+                              void reconcileInvitationDelivery(
+                                selectedInvitationDispatchReview,
+                                selectedInvitationDeliveryEvidence
+                              )
+                            }
+                            type="button"
+                          >
+                            <ShieldCheck size={15} />
+                            {busyAction ===
+                            "invitation-delivery-reconciliation"
+                              ? "Reconciling"
+                              : pendingInvitationDeliveryEvidenceId ===
+                                  selectedInvitationDeliveryEvidence.id
+                                ? "Confirm reconciliation"
+                                : "Review reconciliation"}
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {invitationDeliveryReconciliationResult ? (
+                        <div className="invitation-reconciliation-result">
+                          <CheckCircle2 size={16} />
+                          <div>
+                            <span>
+                              {invitationDeliveryReconciliationResult.mode ===
+                              "reconciled"
+                                ? "Provider state reconciled"
+                                : "Provider state already reconciled"}
+                            </span>
+                            <small>
+                              Accepted {formatDateTime(
+                                invitationDeliveryReconciliationResult.attempt
+                                  .providerAcceptedAt
+                              )}
+                            </small>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {invitationDeliveryEvidenceIssue &&
+                      invitationDeliveryEvidenceReview ? (
+                        <div aria-live="polite" className="alert" role="alert">
+                          {invitationDeliveryEvidenceIssue}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <div aria-live="polite" className="empty-state" role="status">
@@ -4502,9 +4900,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-085 Provider evidence review API</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-086 Evidence-backed reconciliation UI</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-086 Evidence-backed reconciliation UI</span>
+                  <span>T-087 External connector registration contract</span>
                 </div>
               </div>
             </div>
