@@ -9,6 +9,7 @@ import {
   createInvitationEmailProviderPayload,
   deliverInvitationEmail,
   InvitationEmailDeliveryError,
+  parseInvitationAcceptanceBaseUrl,
   type InvitationEmailProvider
 } from "./email-provider.server";
 
@@ -57,6 +58,27 @@ function expectDeliveryError(action: () => unknown, code: string) {
 }
 
 describe("createInvitationEmailProviderPayload", () => {
+  it("validates and normalizes a server-controlled acceptance base URL", () => {
+    expect(
+      parseInvitationAcceptanceBaseUrl(" https://app.example.com/accept ")
+    ).toBe("https://app.example.com/accept");
+    expect(parseInvitationAcceptanceBaseUrl("http://127.0.0.1:3000/"))
+      .toBe("http://127.0.0.1:3000/");
+
+    for (const value of [
+      undefined,
+      "http://app.example.com/",
+      "https://user:password@app.example.com/",
+      "https://app.example.com/?token=unsafe",
+      "https://app.example.com/#unsafe"
+    ]) {
+      expectDeliveryError(
+        () => parseInvitationAcceptanceBaseUrl(value),
+        "invalid_delivery_payload"
+      );
+    }
+  });
+
   it("creates a server-only provider payload with separate context URL and token", () => {
     const payload = createInvitationEmailProviderPayload({
       plan: createPlan(),

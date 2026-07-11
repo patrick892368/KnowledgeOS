@@ -84,21 +84,18 @@ function isDevelopmentHttpUrl(url: URL): boolean {
   );
 }
 
-function createAcceptanceContextUrl(input: {
-  acceptanceBaseUrl: string;
-  invitationId: string;
-  email: string;
-  organizationId: string;
-}): string {
+export function parseInvitationAcceptanceBaseUrl(value: unknown): string {
+  const acceptanceBaseUrl = typeof value === "string" ? value.trim() : "";
   let url: URL;
 
   try {
-    url = new URL(input.acceptanceBaseUrl);
+    url = new URL(acceptanceBaseUrl);
   } catch {
     return invalidPayload("Acceptance base URL must be an absolute URL.");
   }
 
   if (
+    acceptanceBaseUrl.length > maxAcceptanceUrlLength ||
     (url.protocol !== "https:" && !isDevelopmentHttpUrl(url)) ||
     url.username ||
     url.password ||
@@ -110,7 +107,18 @@ function createAcceptanceContextUrl(input: {
     );
   }
 
-  url.search = "";
+  return url.toString();
+}
+
+function createAcceptanceContextUrl(input: {
+  acceptanceBaseUrl: string;
+  invitationId: string;
+  email: string;
+  organizationId: string;
+}): string {
+  const url = new URL(
+    parseInvitationAcceptanceBaseUrl(input.acceptanceBaseUrl)
+  );
   url.hash = "invitation-acceptance";
   url.searchParams.set("invitationId", input.invitationId);
   url.searchParams.set("email", input.email);

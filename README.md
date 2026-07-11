@@ -13,7 +13,7 @@ The current application includes:
 - Local grounded answer generation with citation verification.
 - Connector status tracking.
 - Plan-only workflow template and workflow run planning foundations.
-- Audited invitation acceptance, resend, delivery attempts, and a disabled-by-default Resend email adapter.
+- Audited invitation acceptance, resend, delivery attempts, a disabled-by-default Resend adapter, and a protected dispatch API.
 
 ## Development
 
@@ -30,6 +30,7 @@ Copy the non-secret defaults from `.env.example`. To enable Resend invitation em
 
 ```bash
 KNOWLEDGEOS_RESEND_ENABLED=true
+KNOWLEDGEOS_APP_URL='https://knowledge.example.com/'
 RESEND_API_KEY=re_replace_with_a_server_only_key
 KNOWLEDGEOS_INVITATION_FROM_EMAIL='KnowledgeOS <invitations@example.com>'
 KNOWLEDGEOS_RESEND_TIMEOUT_MS=10000
