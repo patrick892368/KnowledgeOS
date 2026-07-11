@@ -4231,9 +4231,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-078 invitation dispatch policy</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-079 dispatch reconciliation API</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-079 dispatch reconciliation API</span>
+                  <span>T-080 dispatch reconciliation UI</span>
                 </div>
               </div>
             </div>

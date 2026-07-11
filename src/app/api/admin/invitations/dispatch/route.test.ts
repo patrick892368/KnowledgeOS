@@ -2,11 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import { AuthError, type AuthSession } from "@/auth/session";
 import type { Database } from "@/db/client";
-import { InvitationDeliveryAttemptError } from "@/db/invitation-delivery-attempt-repository";
+import {
+  InvitationDeliveryAttemptError,
+  type PersistedInvitationDeliveryAttempt
+} from "@/db/invitation-delivery-attempt-repository";
 import {
   InvitationEmailDispatchPersistenceError,
   type InvitationEmailDispatchResult
 } from "@/invitations/dispatch.server";
+import { InvitationDispatchReconciliationConfigurationError } from "@/invitations/dispatch-reconciliation";
 import type { InvitationEmailProvider } from "@/invitations/email-provider.server";
 import { InvitationLifecycleError } from "@/invitations/lifecycle";
 
@@ -14,6 +18,10 @@ import {
   handleInvitationEmailDispatch,
   type InvitationEmailDispatchRouteDependencies
 } from "./handler";
+import {
+  handleInvitationDispatchReview,
+  type InvitationDispatchReviewDependencies
+} from "./review-handler";
 
 const invitationId = "44444444-4444-4444-8444-444444444444";
 const attemptId = "77777777-7777-4777-8777-777777777777";
@@ -215,6 +223,56 @@ function createDependencies(input: {
   };
 
   return { db, dependencies, policy };
+}
+
+function reviewRequest(query = ""): Request {
+  return new Request(
+    `http://knowledgeos.local/api/admin/invitations/dispatch${query}`
+  );
+}
+
+function createReviewDependencies(input: {
+  session?: AuthSession;
+  authError?: unknown;
+  configError?: unknown;
+  databaseError?: unknown;
+  listError?: unknown;
+  attempts?: PersistedInvitationDeliveryAttempt[];
+} = {}) {
+  const db = { name: "review-test-db" } as unknown as Database;
+  const config = { stalePreparedSeconds: 300 };
+  const dependencies: InvitationDispatchReviewDependencies = {
+    requireSession: vi.fn(async () => {
+      if (input.authError) {
+        throw input.authError;
+      }
+      return input.session ?? session;
+    }),
+    createDatabaseClient: vi.fn(() => {
+      if (input.databaseError) {
+        throw input.databaseError;
+      }
+      return db;
+    }),
+    listAttempts: vi.fn(async () => {
+      if (input.listError) {
+        throw input.listError;
+      }
+      return input.attempts ?? [preparedAttempt];
+    }),
+    createConfig: vi.fn(() => {
+      if (input.configError) {
+        throw input.configError;
+      }
+      return config;
+    }),
+    environment: {
+      KNOWLEDGEOS_INVITATION_RECONCILIATION_STALE_SECONDS: "300"
+    },
+    now: vi.fn(() => now)
+  };
+
+  return { config, db, dependencies };
 }
 
 describe("POST /api/admin/invitations/dispatch", () => {
@@ -557,5 +615,212 @@ describe("POST /api/admin/invitations/dispatch", () => {
     expect(response.status).toBe(503);
     expect(payload).toMatchObject({ error: { code: "database_unavailable" } });
     expect(JSON.stringify(payload)).not.toMatch(/raw provider|database internals/);
+  });
+});
+
+describe("GET /api/admin/invitations/dispatch", () => {
+  it("returns bounded current-organization reconciliation state", async () => {
+    const staleAttempt = {
+      ...preparedAttempt,
+      preparedAt: new Date("2026-07-10T23:55:00.000Z"),
+      createdAt: new Date("2026-07-10T23:55:00.000Z"),
+      updatedAt: new Date("2026-07-10T23:55:00.000Z")
+    };
+    const { db, dependencies } = createReviewDependencies({
+      attempts: [staleAttempt, acceptedAttempt, failedAttempt]
+    });
+
+    const response = await handleInvitationDispatchReview(
+      reviewRequest(`?invitationId=${invitationId}&limit=3`),
+      dependencies
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      summary: {
+        totalCount: 3,
+        reconciliationRequiredCount: 1,
+        acceptedByProviderCount: 1,
+        providerFailedCount: 1,
+        stalePreparedSeconds: 300,
+        deliveryClaim: "provider_status_only",
+        tokenExposure: "not_exposed"
+      },
+      reviews: [
+        {
+          id: attemptId,
+          invitationId,
+          reviewState: "reconciliation_required",
+          recommendedAction: "manual_reconciliation_required",
+          ageSeconds: 300
+        },
+        { reviewState: "accepted_by_provider" },
+        { reviewState: "provider_failed" }
+      ]
+    });
+    expect(dependencies.listAttempts).toHaveBeenCalledWith(db, {
+      session,
+      invitationId,
+      limit: 3
+    });
+    expect(JSON.stringify(payload)).not.toMatch(
+      /organizationId|createdBy|recipient|email|rawToken|tokenHash|providerPayload|rawError/i
+    );
+  });
+
+  it("uses a bounded default query and hides absent cross-organization rows", async () => {
+    const { db, dependencies } = createReviewDependencies({ attempts: [] });
+    const response = await handleInvitationDispatchReview(
+      reviewRequest(`?invitationId=${invitationId}`),
+      dependencies
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      summary: { totalCount: 0 },
+      reviews: []
+    });
+    expect(dependencies.listAttempts).toHaveBeenCalledWith(db, {
+      session,
+      invitationId,
+      limit: 50
+    });
+  });
+
+  it("stops unauthenticated requests before configuration or database work", async () => {
+    const { dependencies } = createReviewDependencies({
+      authError: new AuthError(
+        "unauthenticated",
+        "Authentication is required for this resource."
+      )
+    });
+    const response = await handleInvitationDispatchReview(
+      reviewRequest(),
+      dependencies
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({
+      error: { code: "unauthenticated" }
+    });
+    expect(dependencies.createConfig).not.toHaveBeenCalled();
+    expect(dependencies.createDatabaseClient).not.toHaveBeenCalled();
+    expect(dependencies.listAttempts).not.toHaveBeenCalled();
+  });
+
+  it("stops non-manager sessions before query, configuration, or database work", async () => {
+    const { dependencies } = createReviewDependencies({
+      session: { ...session, role: "viewer" }
+    });
+    const response = await handleInvitationDispatchReview(
+      reviewRequest("?limit=not-an-integer"),
+      dependencies
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: { code: "forbidden" } });
+    expect(dependencies.createConfig).not.toHaveBeenCalled();
+    expect(dependencies.createDatabaseClient).not.toHaveBeenCalled();
+    expect(dependencies.listAttempts).not.toHaveBeenCalled();
+  });
+
+  it("rejects unknown, duplicate, malformed, and out-of-range query values", async () => {
+    const invalidQueries = [
+      "?organizationId=attacker-org",
+      "?limit=1&limit=2",
+      "?invitationId=",
+      "?invitationId=not-a-uuid",
+      "?limit=",
+      "?limit=0",
+      "?limit=101",
+      "?limit=1.5"
+    ];
+
+    for (const query of invalidQueries) {
+      const { dependencies } = createReviewDependencies();
+      const response = await handleInvitationDispatchReview(
+        reviewRequest(query),
+        dependencies
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({
+        error: { code: "invalid_payload" }
+      });
+      expect(dependencies.createConfig).not.toHaveBeenCalled();
+      expect(dependencies.createDatabaseClient).not.toHaveBeenCalled();
+      expect(dependencies.listAttempts).not.toHaveBeenCalled();
+    }
+  });
+
+  it("sanitizes reconciliation configuration failures before database work", async () => {
+    const { dependencies } = createReviewDependencies({
+      configError: new InvitationDispatchReconciliationConfigurationError(
+        "unsafe environment value 999999"
+      )
+    });
+    const response = await handleInvitationDispatchReview(
+      reviewRequest(),
+      dependencies
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload).toEqual({
+      error: {
+        code: "review_misconfigured",
+        message: "Invitation dispatch review is not configured."
+      }
+    });
+    expect(JSON.stringify(payload)).not.toMatch(/unsafe environment|999999/);
+    expect(dependencies.createDatabaseClient).not.toHaveBeenCalled();
+    expect(dependencies.listAttempts).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes database creation and listing failures", async () => {
+    for (const input of [
+      { databaseError: new Error("postgres://user:secret@private-host/db") },
+      { listError: new Error("query leaked private table details") }
+    ]) {
+      const { dependencies } = createReviewDependencies(input);
+      const response = await handleInvitationDispatchReview(
+        reviewRequest(),
+        dependencies
+      );
+      const payload = await response.json();
+
+      expect(response.status).toBe(503);
+      expect(payload).toEqual({
+        error: {
+          code: "database_unavailable",
+          message: "Invitation dispatch review is temporarily unavailable."
+        }
+      });
+      expect(JSON.stringify(payload)).not.toMatch(
+        /postgres|secret@private-host|private table/
+      );
+    }
+  });
+
+  it("preserves bounded repository scope errors", async () => {
+    const { dependencies } = createReviewDependencies({
+      listError: new InvitationDeliveryAttemptError(
+        "cross_scope",
+        "Invitation delivery attempt was not found."
+      )
+    });
+    const response = await handleInvitationDispatchReview(
+      reviewRequest(),
+      dependencies
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "cross_scope",
+        message: "Invitation delivery attempt was not found."
+      }
+    });
   });
 });
