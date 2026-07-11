@@ -4498,9 +4498,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-084 Audited dispatch reconciliation API</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-085 Provider evidence review API</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-085 Provider evidence review API</span>
+                  <span>T-086 Evidence-backed reconciliation UI</span>
                 </div>
               </div>
             </div>
