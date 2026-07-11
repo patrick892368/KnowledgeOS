@@ -13,6 +13,7 @@ The current application includes:
 - Local grounded answer generation with citation verification.
 - Connector status tracking.
 - Plan-only workflow template and workflow run planning foundations.
+- Audited invitation acceptance, resend, delivery attempts, and a disabled-by-default Resend email adapter.
 
 ## Development
 
@@ -22,6 +23,19 @@ npm run dev
 ```
 
 Open http://127.0.0.1:3000 after starting the dev server.
+
+## Invitation Email
+
+Copy the non-secret defaults from `.env.example`. To enable Resend invitation email delivery, set:
+
+```bash
+KNOWLEDGEOS_RESEND_ENABLED=true
+RESEND_API_KEY=re_replace_with_a_server_only_key
+KNOWLEDGEOS_INVITATION_FROM_EMAIL='KnowledgeOS <invitations@example.com>'
+KNOWLEDGEOS_RESEND_TIMEOUT_MS=10000
+```
+
+The sender domain must be verified in Resend. Keep `RESEND_API_KEY` server-only and leave the adapter disabled until the configuration is complete.
 
 ## Verification
 
