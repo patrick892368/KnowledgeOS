@@ -77,7 +77,7 @@ export interface ResendInvitationWebhookDependencies {
 }
 
 const attemptTagName = "knowledgeos_attempt_id";
-const maximumRawBodyBytes = 65_536;
+export const maximumInvitationProviderWebhookBodyBytes = 65_536;
 const maximumClockSkewSeconds = 300;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -213,7 +213,8 @@ function parseRawBody(rawBody: string): string {
   if (
     typeof rawBody !== "string" ||
     !rawBody.trim() ||
-    Buffer.byteLength(rawBody, "utf8") > maximumRawBodyBytes
+    Buffer.byteLength(rawBody, "utf8") >
+      maximumInvitationProviderWebhookBodyBytes
   ) {
     return webhookError(
       "invalid_request",

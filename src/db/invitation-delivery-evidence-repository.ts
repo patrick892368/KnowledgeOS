@@ -252,11 +252,7 @@ export async function persistVerifiedInvitationDeliveryEvidence(
       .where(
         and(
           eq(invitationDeliveryAttempts.id, evidence.deliveryAttemptId),
-          eq(invitationDeliveryAttempts.provider, evidence.provider),
-          eq(
-            invitationDeliveryAttempts.providerMessageId,
-            evidence.providerMessageId
-          )
+          eq(invitationDeliveryAttempts.provider, evidence.provider)
         )
       )
       .limit(1);
@@ -271,8 +267,10 @@ export async function persistVerifiedInvitationDeliveryEvidence(
     if (
       attempt.id !== evidence.deliveryAttemptId ||
       attempt.provider !== evidence.provider ||
-      attempt.status !== "accepted_by_provider" ||
-      attempt.providerMessageId !== evidence.providerMessageId
+      (attempt.status === "accepted_by_provider" &&
+        attempt.providerMessageId !== evidence.providerMessageId) ||
+      (attempt.status === "prepared" && attempt.providerMessageId !== null) ||
+      attempt.status === "provider_failed"
     ) {
       return evidenceError(
         "invalid_state",

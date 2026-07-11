@@ -221,22 +221,56 @@ describe("persistVerifiedInvitationDeliveryEvidence", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it("rejects non-accepted attempts without mutation", async () => {
+  it("persists signed evidence for a prepared reconciliation attempt without mutation", async () => {
     const preparedAttempt = {
       ...acceptedAttempt,
       status: "prepared" as const,
-      providerMessageId
+      providerMessageId: null
     };
-    const db = createDatabaseDouble({ attemptRows: [preparedAttempt] });
+    const db = createDatabaseDouble({
+      attemptRows: [preparedAttempt],
+      insertedRows: [persistedEvidence]
+    });
 
     await expect(
       persistVerifiedInvitationDeliveryEvidence(db.db, {
         evidence: verifiedEvidence,
         receivedAt
       })
-    ).rejects.toMatchObject({ code: "invalid_state" });
-    expect(db.insert).not.toHaveBeenCalled();
+    ).resolves.toEqual({ mode: "created", evidence: persistedEvidence });
     expect(preparedAttempt.status).toBe("prepared");
+    expect(db.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId,
+        invitationId,
+        providerMessageId
+      })
+    );
+  });
+
+  it("rejects impossible prepared-message and terminal-failed attempts", async () => {
+    const preparedAttempt = {
+      ...acceptedAttempt,
+      status: "prepared" as const,
+      providerMessageId
+    };
+    const failedAttempt = {
+      ...acceptedAttempt,
+      status: "provider_failed" as const,
+      providerMessageId: null
+    };
+
+    for (const attempt of [preparedAttempt, failedAttempt]) {
+      const db = createDatabaseDouble({ attemptRows: [attempt] });
+
+      await expect(
+        persistVerifiedInvitationDeliveryEvidence(db.db, {
+          evidence: verifiedEvidence,
+          receivedAt
+        })
+      ).rejects.toMatchObject({ code: "invalid_state" });
+      expect(db.insert).not.toHaveBeenCalled();
+    }
   });
 
   it("retains out-of-order evidence immutably without changing attempt status", async () => {
