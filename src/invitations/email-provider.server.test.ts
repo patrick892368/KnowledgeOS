@@ -13,6 +13,7 @@ import {
 } from "./email-provider.server";
 
 const now = new Date("2026-07-11T00:00:00.000Z");
+const attemptId = "77777777-7777-4777-8777-777777777777";
 const target: InvitationDeliveryTarget = {
   id: "44444444-4444-4444-8444-444444444444",
   organizationId: "11111111-1111-4111-8111-111111111111",
@@ -59,6 +60,7 @@ describe("createInvitationEmailProviderPayload", () => {
   it("creates a server-only provider payload with separate context URL and token", () => {
     const payload = createInvitationEmailProviderPayload({
       plan: createPlan(),
+      deliveryAttemptId: attemptId,
       acceptanceBaseUrl: "https://app.example.com/",
       now
     });
@@ -67,6 +69,7 @@ describe("createInvitationEmailProviderPayload", () => {
 
     expect(payload).toMatchObject({
       template: "invitation_acceptance",
+      deliveryAttemptId: attemptId,
       recipient: target.email,
       subject: "KnowledgeOS invitation",
       invitationId: target.id,
@@ -92,8 +95,20 @@ describe("createInvitationEmailProviderPayload", () => {
   it("rejects unsafe URLs, mismatched token material, and expired plans", () => {
     expectDeliveryError(
       () =>
+        createInvitationEmailProviderPayload({
+          plan: createPlan(),
+          deliveryAttemptId: "not-a-uuid",
+          acceptanceBaseUrl: "https://app.example.com/",
+          now
+        }),
+      "invalid_delivery_payload"
+    );
+
+    expectDeliveryError(
+      () =>
       createInvitationEmailProviderPayload({
         plan: createPlan(),
+        deliveryAttemptId: attemptId,
         acceptanceBaseUrl: "http://app.example.com/",
         now
       }),
@@ -104,6 +119,7 @@ describe("createInvitationEmailProviderPayload", () => {
       () =>
         createInvitationEmailProviderPayload({
           plan: createPlan(),
+          deliveryAttemptId: attemptId,
           acceptanceBaseUrl: "https://app.example.com/?token=unsafe",
           now
         }),
@@ -116,6 +132,7 @@ describe("createInvitationEmailProviderPayload", () => {
       () =>
         createInvitationEmailProviderPayload({
           plan: mismatchedPlan,
+          deliveryAttemptId: attemptId,
           acceptanceBaseUrl: "https://app.example.com/",
           now
         }),
@@ -126,6 +143,7 @@ describe("createInvitationEmailProviderPayload", () => {
       () =>
         createInvitationEmailProviderPayload({
           plan: createPlan(),
+          deliveryAttemptId: attemptId,
           acceptanceBaseUrl: "https://app.example.com/",
           now: new Date("2026-07-12T00:00:00.000Z")
         }),
@@ -136,6 +154,7 @@ describe("createInvitationEmailProviderPayload", () => {
   it("allows loopback HTTP only for local development", () => {
     const payload = createInvitationEmailProviderPayload({
       plan: createPlan(),
+      deliveryAttemptId: attemptId,
       acceptanceBaseUrl: "http://127.0.0.1:3000/",
       now
     });
@@ -152,6 +171,7 @@ describe("deliverInvitationEmail", () => {
 
     const receipt = await deliverInvitationEmail({
       plan: createPlan(),
+      deliveryAttemptId: attemptId,
       acceptanceBaseUrl: "https://app.example.com/accept",
       provider,
       now
@@ -159,6 +179,7 @@ describe("deliverInvitationEmail", () => {
 
     expect(provider.sendInvitation).toHaveBeenCalledTimes(1);
     expect(receipt).toEqual({
+      deliveryAttemptId: attemptId,
       invitationId: target.id,
       recipient: target.email,
       provider: "test_provider",
@@ -176,6 +197,7 @@ describe("deliverInvitationEmail", () => {
     await expect(
       deliverInvitationEmail({
         plan: createPlan(),
+        deliveryAttemptId: attemptId,
         acceptanceBaseUrl: "https://app.example.com/",
         now
       })
@@ -188,6 +210,7 @@ describe("deliverInvitationEmail", () => {
     await expect(
       deliverInvitationEmail({
         plan: createPlan(),
+        deliveryAttemptId: attemptId,
         acceptanceBaseUrl: "https://app.example.com/",
         provider: {
           name: "disabled_provider",
@@ -214,6 +237,7 @@ describe("deliverInvitationEmail", () => {
     try {
       await deliverInvitationEmail({
         plan: createPlan(),
+        deliveryAttemptId: attemptId,
         acceptanceBaseUrl: "https://app.example.com/",
         provider,
         now
@@ -242,6 +266,7 @@ describe("deliverInvitationEmail", () => {
       await expect(
         deliverInvitationEmail({
           plan: createPlan(),
+          deliveryAttemptId: attemptId,
           acceptanceBaseUrl: "https://app.example.com/",
           provider,
           now

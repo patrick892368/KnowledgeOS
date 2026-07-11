@@ -4047,9 +4047,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-073 invitation delivery attempts</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-074 invitation dispatch orchestration</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-074 invitation dispatch orchestration</span>
+                  <span>T-075 Resend email adapter</span>
                 </div>
               </div>
             </div>

@@ -24,6 +24,7 @@ export class InvitationEmailDeliveryError extends Error {
 
 export interface InvitationEmailProviderPayload {
   template: "invitation_acceptance";
+  deliveryAttemptId: string;
   recipient: string;
   subject: "KnowledgeOS invitation";
   invitationId: string;
@@ -48,6 +49,7 @@ export interface InvitationEmailProvider {
 }
 
 export interface PublicInvitationEmailReceipt {
+  deliveryAttemptId: string;
   invitationId: string;
   recipient: string;
   provider: string;
@@ -62,6 +64,8 @@ const maxContextValueLength = 320;
 const maxOneTimeTokenLength = 512;
 const maxProviderNameLength = 64;
 const maxProviderMessageIdLength = 256;
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function invalidPayload(message: string): never {
   throw new InvitationEmailDeliveryError(
@@ -224,17 +228,23 @@ function validateMessageId(
 
 export function createInvitationEmailProviderPayload(input: {
   plan: InvitationDeliveryPlan;
+  deliveryAttemptId: string;
   acceptanceBaseUrl: string;
   now?: Date;
 }): Readonly<InvitationEmailProviderPayload> {
   const now = input.now ?? new Date();
   validateDeliveryPlan(input.plan, now);
 
+  if (!uuidPattern.test(input.deliveryAttemptId)) {
+    invalidPayload("Invitation delivery attempt ID must be a UUID.");
+  }
+
   const acceptance =
     createInvitationAcceptancePayloadFromDeliveryPlan(input.plan);
 
   return Object.freeze({
     template: "invitation_acceptance",
+    deliveryAttemptId: input.deliveryAttemptId,
     recipient: acceptance.email,
     subject: "KnowledgeOS invitation",
     invitationId: acceptance.invitationId,
@@ -255,6 +265,7 @@ export function createInvitationEmailProviderPayload(input: {
 
 export async function deliverInvitationEmail(input: {
   plan: InvitationDeliveryPlan;
+  deliveryAttemptId: string;
   acceptanceBaseUrl: string;
   provider?: InvitationEmailProvider;
   now?: Date;
@@ -279,6 +290,7 @@ export async function deliverInvitationEmail(input: {
   const acceptedAt = input.now ?? new Date();
   const payload = createInvitationEmailProviderPayload({
     plan: input.plan,
+    deliveryAttemptId: input.deliveryAttemptId,
     acceptanceBaseUrl: input.acceptanceBaseUrl,
     now: acceptedAt
   });
@@ -295,6 +307,7 @@ export async function deliverInvitationEmail(input: {
   }
 
   return {
+    deliveryAttemptId: input.deliveryAttemptId,
     invitationId: input.plan.publicPlan.invitationId,
     recipient: input.plan.publicPlan.email,
     provider: providerName,

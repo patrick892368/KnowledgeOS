@@ -82,6 +82,7 @@ const failedAttempt = {
   updatedAt: providerFailedAt
 };
 const receipt: PublicInvitationEmailReceipt = {
+  deliveryAttemptId: attemptId,
   invitationId: invitationRow.id,
   recipient: invitationRow.email,
   provider: "test_provider",
@@ -271,7 +272,10 @@ describe("persistInvitationDeliveryAttempt", () => {
 
     const result = await persistInvitationDeliveryAttempt(db.db, {
       session: ownerSession,
-      delivery,
+      delivery: {
+        ...delivery,
+        deliveryExpiresAt: new Date("2026-07-12T01:00:00.000Z")
+      },
       provider: "test_provider",
       attemptId,
       now: preparedAt
@@ -419,6 +423,22 @@ describe("invitation delivery attempt transitions", () => {
       })
     ).rejects.toMatchObject({ code: "invalid_payload" });
     expect(mismatchDb.updateSet).not.toHaveBeenCalled();
+
+    const attemptMismatchDb = createTransitionDatabaseDouble({
+      currentRows: [preparedAttempt],
+      updatedRows: []
+    });
+    await expect(
+      markInvitationDeliveryAttemptProviderAccepted(attemptMismatchDb.db, {
+        session: ownerSession,
+        attemptId,
+        receipt: {
+          ...receipt,
+          deliveryAttemptId: "88888888-8888-4888-8888-888888888888"
+        }
+      })
+    ).rejects.toMatchObject({ code: "invalid_payload" });
+    expect(attemptMismatchDb.updateSet).not.toHaveBeenCalled();
 
     const recipientMismatchDb = createTransitionDatabaseDouble({
       currentRows: [preparedAttempt],

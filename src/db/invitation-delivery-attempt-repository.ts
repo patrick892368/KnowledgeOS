@@ -369,9 +369,7 @@ export async function persistInvitationDeliveryAttempt(
 
     if (
       attempt.invitationId !== invitation.id ||
-      attempt.provider !== provider ||
-      attempt.deliveryExpiresAt.getTime() !==
-        input.delivery.deliveryExpiresAt.getTime()
+      attempt.provider !== provider
     ) {
       throw new InvitationDeliveryAttemptError(
         "invalid_payload",
@@ -458,6 +456,7 @@ export async function markInvitationDeliveryAttemptProviderAccepted(
     }
 
     if (
+      current.id !== input.receipt.deliveryAttemptId ||
       current.invitationId !== input.receipt.invitationId ||
       current.provider !== provider ||
       !isValidInvitationEmail(input.receipt.recipient) ||
