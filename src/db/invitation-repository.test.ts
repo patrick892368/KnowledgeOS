@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { AuthSession } from "@/auth/session";
+import { createInvitationAcceptancePlan } from "@/invitations/acceptance";
 import { InvitationLifecycleError } from "@/invitations/lifecycle";
 
 import type { Database } from "./client";
@@ -9,9 +10,11 @@ import {
   createInvitationPersistenceAuditEvent,
   createInvitationResendAuditEvent,
   createInvitationRevocationAuditEvent,
+  createInvitationTokenRotationAuditEvent,
   hashInvitationToken,
   listOrganizationInvitations,
   prepareInvitationResend,
+  rotateInvitationDeliveryToken,
   revokeInvitation,
   persistInvitation
 } from "./invitation-repository";
@@ -246,6 +249,67 @@ function createResendDatabaseDouble(rows: unknown[]) {
   };
 }
 
+function createRotationDatabaseDouble(input: {
+  invitationRows: unknown[];
+  updatedRows: unknown[];
+}) {
+  const auditWrites: unknown[] = [];
+  const selectLimit = vi.fn(async () => input.invitationRows);
+  const selectWhere = vi.fn(() => ({
+    limit: selectLimit
+  }));
+  const selectFrom = vi.fn(() => ({
+    where: selectWhere
+  }));
+  const select = vi.fn(() => ({
+    from: selectFrom
+  }));
+  const updateReturning = vi.fn(async () => input.updatedRows);
+  const updateWhere = vi.fn(() => ({
+    returning: updateReturning
+  }));
+  const updateSet = vi.fn(() => ({
+    where: updateWhere
+  }));
+  const auditValues = vi.fn(async (value: unknown) => {
+    auditWrites.push(value);
+  });
+  const tx = {
+    select,
+    update: vi.fn((table: unknown) => {
+      if (table !== invitations) {
+        throw new Error("Unexpected update table.");
+      }
+
+      return {
+        set: updateSet
+      };
+    }),
+    insert: vi.fn((table: unknown) => {
+      if (table !== auditEvents) {
+        throw new Error("Unexpected insert table.");
+      }
+
+      return {
+        values: auditValues
+      };
+    })
+  };
+  const db = {
+    transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) =>
+      callback(tx)
+    )
+  };
+
+  return {
+    db: db as unknown as Database,
+    auditWrites,
+    auditValues,
+    updateReturning,
+    updateSet
+  };
+}
+
 function createAcceptanceDatabaseDouble(input: {
   invitationRows: unknown[];
   insertedUserRows: unknown[];
@@ -456,6 +520,50 @@ describe("createInvitationResendAuditEvent", () => {
   });
 });
 
+describe("createInvitationTokenRotationAuditEvent", () => {
+  it("records token-safe rotation metadata", () => {
+    const event = createInvitationTokenRotationAuditEvent({
+      session: ownerSession,
+      delivery: {
+        invitationId: invitationRow.id,
+        organizationId: ownerSession.organizationId,
+        email: invitationRow.email,
+        role: invitationRow.role,
+        status: "pending",
+        acceptanceRoute: "/api/invitations/accept",
+        deliveryExpiresAt: new Date("2026-07-11T12:00:00.000Z"),
+        invitationExpiresAt: invitationRow.expiresAt,
+        tokenExposure: "not_exposed",
+        auditIntent: {
+          organizationId: ownerSession.organizationId,
+          actorUserId: null,
+          action: "invitation.delivery_planned",
+          resourceType: "organization",
+          resourceId: ownerSession.organizationId,
+          metadata: {
+            invitationId: invitationRow.id,
+            tokenExposure: "not_exposed"
+          }
+        }
+      },
+      rotatedAt: new Date("2026-07-11T00:00:00.000Z")
+    });
+
+    expect(event).toMatchObject({
+      action: "invitation.delivery_token_rotated",
+      actorUserId: ownerSession.userId,
+      metadata: {
+        invitationId: invitationRow.id,
+        plannedAction: "invitation.delivery_planned",
+        rotatedAt: "2026-07-11T00:00:00.000Z",
+        previousTokenInvalidated: true,
+        tokenExposure: "not_exposed"
+      }
+    });
+    expect(JSON.stringify(event)).not.toMatch(/rawToken|tokenHash|secret/i);
+  });
+});
+
 describe("persistInvitation", () => {
   it("inserts a validated invitation and writes a create audit event", async () => {
     const db = createDatabaseDouble({
@@ -642,6 +750,173 @@ describe("prepareInvitationResend", () => {
       ).rejects.toMatchObject({
         code
       });
+      expect(db.auditValues).not.toHaveBeenCalled();
+    }
+  });
+});
+
+describe("rotateInvitationDeliveryToken", () => {
+  const rotatedAt = new Date("2026-07-11T00:00:00.000Z");
+  const rotatedInvitationRow = {
+    ...invitationRow,
+    updatedAt: rotatedAt
+  };
+
+  it("rotates the token hash and writes a token-safe audit event", async () => {
+    const db = createRotationDatabaseDouble({
+      invitationRows: [invitationRow],
+      updatedRows: [rotatedInvitationRow]
+    });
+
+    const result = await rotateInvitationDeliveryToken(db.db, {
+      session: ownerSession,
+      invitationId: invitationRow.id,
+      now: rotatedAt,
+      deliveryTtlHours: 12,
+      rawToken: "rotated-delivery-token"
+    });
+
+    expect(db.updateSet).toHaveBeenCalledWith({
+      tokenHash: hashInvitationToken("rotated-delivery-token"),
+      updatedAt: rotatedAt
+    });
+    expect(result).toMatchObject({
+      invitation: rotatedInvitationRow,
+      delivery: {
+        publicPlan: {
+          invitationId: invitationRow.id,
+          deliveryExpiresAt: new Date("2026-07-11T12:00:00.000Z"),
+          tokenExposure: "not_exposed"
+        },
+        secret: {
+          rawToken: "rotated-delivery-token",
+          tokenHash: hashInvitationToken("rotated-delivery-token")
+        }
+      },
+      auditEvent: {
+        action: "invitation.delivery_token_rotated",
+        metadata: {
+          invitationId: invitationRow.id,
+          previousTokenInvalidated: true,
+          tokenExposure: "not_exposed"
+        }
+      }
+    });
+    expect(db.auditWrites).toHaveLength(1);
+    expect(
+      JSON.stringify({
+        invitation: result.invitation,
+        delivery: result.delivery.publicPlan,
+        auditEvent: result.auditEvent
+      })
+    ).not.toMatch(/rotated-delivery-token|tokenHash|rawToken|secret/i);
+  });
+
+  it("keeps the rotated token acceptance-compatible and invalidates the prior token", async () => {
+    const db = createRotationDatabaseDouble({
+      invitationRows: [invitationRow],
+      updatedRows: [rotatedInvitationRow]
+    });
+    const result = await rotateInvitationDeliveryToken(db.db, {
+      session: ownerSession,
+      invitationId: invitationRow.id,
+      now: rotatedAt,
+      rawToken: "new-invitation-token"
+    });
+    const target = {
+      ...invitationRow,
+      tokenHash: result.delivery.secret.tokenHash
+    };
+
+    expect(
+      createInvitationAcceptancePlan({
+        payload: {
+          invitationId: invitationRow.id,
+          token: "new-invitation-token",
+          email: invitationRow.email
+        },
+        target,
+        now: new Date("2026-07-11T01:00:00.000Z")
+      })
+    ).toMatchObject({
+      invitationId: invitationRow.id,
+      nextStatus: "accepted"
+    });
+    expect(() =>
+      createInvitationAcceptancePlan({
+        payload: {
+          invitationId: invitationRow.id,
+          token: "invite-token",
+          email: invitationRow.email
+        },
+        target,
+        now: new Date("2026-07-11T01:00:00.000Z")
+      })
+    ).toThrow(InvitationLifecycleError);
+  });
+
+  it("rejects non-managers before opening a transaction", async () => {
+    const db = {
+      transaction: vi.fn()
+    } as unknown as Database;
+
+    await expect(
+      rotateInvitationDeliveryToken(db, {
+        session: {
+          ...ownerSession,
+          role: "viewer"
+        },
+        invitationId: invitationRow.id
+      })
+    ).rejects.toMatchObject({ code: "forbidden" });
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("hides missing and concurrently changed invitations without audit writes", async () => {
+    for (const input of [
+      { invitationRows: [], updatedRows: [] },
+      { invitationRows: [invitationRow], updatedRows: [] }
+    ]) {
+      const db = createRotationDatabaseDouble(input);
+
+      await expect(
+        rotateInvitationDeliveryToken(db.db, {
+          session: ownerSession,
+          invitationId: invitationRow.id,
+          now: rotatedAt,
+          rawToken: "rotated-delivery-token"
+        })
+      ).rejects.toMatchObject({ code: "not_found" });
+      expect(db.auditValues).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects accepted, revoked, and expired invitations before mutation", async () => {
+    for (const [row, code] of [
+      [acceptedInvitationRow, "accepted_invitation"],
+      [revokedInvitationRow, "revoked_invitation"],
+      [
+        {
+          ...invitationRow,
+          expiresAt: new Date("2026-07-10T23:59:59.000Z")
+        },
+        "expired_invitation"
+      ]
+    ] as const) {
+      const db = createRotationDatabaseDouble({
+        invitationRows: [row],
+        updatedRows: []
+      });
+
+      await expect(
+        rotateInvitationDeliveryToken(db.db, {
+          session: ownerSession,
+          invitationId: invitationRow.id,
+          now: rotatedAt,
+          rawToken: "rotated-delivery-token"
+        })
+      ).rejects.toMatchObject({ code });
+      expect(db.updateSet).not.toHaveBeenCalled();
       expect(db.auditValues).not.toHaveBeenCalled();
     }
   });

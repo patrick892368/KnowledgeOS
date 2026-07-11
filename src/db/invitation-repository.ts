@@ -18,6 +18,7 @@ import {
 } from "@/invitations/acceptance";
 import {
   createInvitationDeliveryPlan,
+  type InvitationDeliveryPlan,
   type InvitationDeliveryTarget,
   type PublicInvitationDeliveryPlan
 } from "@/invitations/delivery";
@@ -57,6 +58,12 @@ export interface InvitationRevocationResult {
 export interface InvitationResendPreparationResult {
   invitation: PersistedInvitation;
   delivery: PublicInvitationDeliveryPlan;
+  auditEvent: typeof auditEvents.$inferInsert;
+}
+
+export interface ServerInvitationTokenRotationResult {
+  invitation: PersistedInvitation;
+  delivery: InvitationDeliveryPlan;
   auditEvent: typeof auditEvents.$inferInsert;
 }
 
@@ -166,6 +173,34 @@ export function createInvitationResendAuditEvent(input: {
       plannedAction: input.delivery.auditIntent.action,
       deliveryExpiresAt: input.delivery.deliveryExpiresAt.toISOString(),
       invitationExpiresAt: input.delivery.invitationExpiresAt.toISOString(),
+      tokenExposure: input.delivery.tokenExposure
+    }
+  };
+}
+
+export function createInvitationTokenRotationAuditEvent(input: {
+  session: AuthSession;
+  delivery: PublicInvitationDeliveryPlan;
+  rotatedAt?: Date;
+}): typeof auditEvents.$inferInsert {
+  const rotatedAt = input.rotatedAt ?? new Date();
+
+  return {
+    organizationId: input.session.organizationId,
+    actorUserId: input.session.userId,
+    action: "invitation.delivery_token_rotated",
+    resourceType: "organization",
+    resourceId: input.session.organizationId,
+    metadata: {
+      ...input.delivery.auditIntent.metadata,
+      invitationId: input.delivery.invitationId,
+      email: input.delivery.email,
+      role: input.delivery.role,
+      plannedAction: input.delivery.auditIntent.action,
+      deliveryExpiresAt: input.delivery.deliveryExpiresAt.toISOString(),
+      invitationExpiresAt: input.delivery.invitationExpiresAt.toISOString(),
+      rotatedAt: rotatedAt.toISOString(),
+      previousTokenInvalidated: true,
       tokenExposure: input.delivery.tokenExposure
     }
   };
@@ -373,6 +408,90 @@ export async function prepareInvitationResend(
     return {
       invitation,
       delivery: deliveryPlan.publicPlan,
+      auditEvent
+    };
+  });
+}
+
+export async function rotateInvitationDeliveryToken(
+  db: Database,
+  input: {
+    session: AuthSession;
+    invitationId: string;
+    now?: Date;
+    deliveryTtlHours?: number;
+    rawToken?: string;
+  }
+): Promise<ServerInvitationTokenRotationResult> {
+  if (!canPlanInvitations(input.session.role)) {
+    throw new InvitationLifecycleError(
+      "forbidden",
+      "Only owner or admin members can manage organization invitations."
+    );
+  }
+
+  const rotatedAt = input.now ?? new Date();
+
+  return db.transaction(async (tx) => {
+    const [invitation] = await tx
+      .select(invitationSelection)
+      .from(invitations)
+      .where(
+        and(
+          eq(invitations.id, input.invitationId),
+          eq(invitations.organizationId, input.session.organizationId)
+        )
+      )
+      .limit(1);
+
+    if (!invitation) {
+      throw new InvitationLifecycleError(
+        "not_found",
+        "Invitation was not found."
+      );
+    }
+
+    const delivery = createInvitationDeliveryPlan({
+      target: toDeliveryTarget(invitation),
+      options: {
+        now: rotatedAt,
+        deliveryTtlHours: input.deliveryTtlHours,
+        rawToken: input.rawToken
+      }
+    });
+    const [updatedInvitation] = await tx
+      .update(invitations)
+      .set({
+        tokenHash: delivery.secret.tokenHash,
+        updatedAt: rotatedAt
+      })
+      .where(
+        and(
+          eq(invitations.id, invitation.id),
+          eq(invitations.organizationId, input.session.organizationId),
+          eq(invitations.status, "pending")
+        )
+      )
+      .returning(invitationSelection);
+
+    if (!updatedInvitation) {
+      throw new InvitationLifecycleError(
+        "not_found",
+        "Pending invitation was not found."
+      );
+    }
+
+    const auditEvent = createInvitationTokenRotationAuditEvent({
+      session: input.session,
+      delivery: delivery.publicPlan,
+      rotatedAt
+    });
+
+    await tx.insert(auditEvents).values(auditEvent);
+
+    return {
+      invitation: updatedInvitation,
+      delivery,
       auditEvent
     };
   });

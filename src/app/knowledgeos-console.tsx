@@ -4039,9 +4039,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-071 invitation email provider contract</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-072 invitation token rotation</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-072 invitation token rotation</span>
+                  <span>T-073 invitation delivery attempts</span>
                 </div>
               </div>
             </div>
