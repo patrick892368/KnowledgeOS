@@ -39,6 +39,11 @@ import {
 import type { NormalizedIngestionResult } from "@/ingestion/types";
 import { parseInvitationAcceptanceDeepLink } from "@/invitations/deep-link";
 import {
+  createInvitationDispatchReviewQuery,
+  parseInvitationDispatchReviewUiResponse,
+  type InvitationDispatchReviewUiResult
+} from "@/invitations/dispatch-reconciliation-ui";
+import {
   canStartInvitationDispatch,
   createInvitationDispatchRequest,
   createInvitationDispatchRequestFailure,
@@ -354,6 +359,28 @@ function formatActivityTime(value: string): string {
   }).format(new Date(value));
 }
 
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+
+  if (seconds < 3_600) {
+    return `${Math.floor(seconds / 60)}m`;
+  }
+
+  return `${Math.floor(seconds / 3_600)}h`;
+}
+
 function formatAuditMetadata(metadata: Record<string, unknown>): string {
   if (Object.keys(metadata).length === 0) {
     return "No metadata";
@@ -399,6 +426,12 @@ export function KnowledgeOSConsole() {
   const [invitationDispatches, setInvitationDispatches] = useState<
     Record<string, InvitationDispatchUiState>
   >({});
+  const [invitationDispatchReviewFilter, setInvitationDispatchReviewFilter] =
+    useState("");
+  const [invitationDispatchReview, setInvitationDispatchReview] =
+    useState<InvitationDispatchReviewUiResult | null>(null);
+  const [invitationDispatchReviewIssue, setInvitationDispatchReviewIssue] =
+    useState<string | null>(null);
   const [pendingDispatchInvitationId, setPendingDispatchInvitationId] =
     useState<string | null>(null);
   const [pendingRevokeInvitationId, setPendingRevokeInvitationId] =
@@ -454,6 +487,7 @@ export function KnowledgeOSConsole() {
     | "invitation"
     | "invitations"
     | "invitation-dispatch"
+    | "invitation-dispatch-review"
     | "invitation-revoke"
     | "invitation-accept"
     | "audit-events"
@@ -735,6 +769,8 @@ export function KnowledgeOSConsole() {
     if (!session || !isMembershipManager(session.role)) {
       setMemberships([]);
       setInvitations([]);
+      setInvitationDispatchReview(null);
+      setInvitationDispatchReviewIssue(null);
       setPersistedKpiTelemetryEvents([]);
       setKpiTelemetryPersistence(null);
       setPendingRevokeInvitationId(null);
@@ -1084,6 +1120,61 @@ export function KnowledgeOSConsole() {
         caughtError instanceof Error
           ? caughtError.message
           : "Invitation loading failed."
+      );
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function loadInvitationDispatchReview() {
+    if (!canManageCurrentMemberships) {
+      setInvitationDispatchReview(null);
+      setInvitationDispatchReviewIssue(
+        "Owner or admin signed session is required."
+      );
+      return;
+    }
+
+    const invitationId = invitationDispatchReviewFilter.trim();
+    let query: string;
+
+    try {
+      query = createInvitationDispatchReviewQuery({
+        ...(invitationId ? { invitationId } : {}),
+        limit: 50
+      });
+    } catch (caughtError) {
+      setInvitationDispatchReview(null);
+      setInvitationDispatchReviewIssue(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Invitation dispatch review filter is invalid."
+      );
+      return;
+    }
+
+    setBusyAction("invitation-dispatch-review");
+    setInvitationDispatchReview(null);
+    setInvitationDispatchReviewIssue(null);
+
+    try {
+      const payload = await readApiResponse<unknown>(
+        await fetch(`/api/admin/invitations/dispatch${query}`, {
+          method: "GET",
+          credentials: "same-origin"
+        })
+      );
+      const review = parseInvitationDispatchReviewUiResponse(payload, {
+        ...(invitationId ? { invitationId } : {})
+      });
+
+      setInvitationDispatchReview(review);
+    } catch (caughtError) {
+      setInvitationDispatchReview(null);
+      setInvitationDispatchReviewIssue(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Invitation dispatch review failed to load."
       );
     } finally {
       setBusyAction(null);
@@ -2418,6 +2509,158 @@ export function KnowledgeOSConsole() {
                   </div>
                 ) : null}
               </div>
+            </div>
+
+            <div
+              aria-busy={busyAction === "invitation-dispatch-review"}
+              className="invitation-reconciliation"
+            >
+              <div className="invitation-list-header">
+                <span>Dispatch reconciliation</span>
+                <div className="invitation-list-header-meta">
+                  <span className="status-pill">
+                    <ShieldCheck size={13} />
+                    Read only
+                  </span>
+                  <span className="status-pill">
+                    <Mail size={13} />
+                    Provider status only
+                  </span>
+                  <span className="count-pill">
+                    {invitationDispatchReview?.summary
+                      .reconciliationRequiredCount ?? 0}{" "}
+                    need review
+                  </span>
+                </div>
+              </div>
+
+              <form
+                className="invitation-reconciliation-toolbar"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void loadInvitationDispatchReview();
+                }}
+              >
+                <label className="field">
+                  <span>Invitation ID filter</span>
+                  <input
+                    autoComplete="off"
+                    placeholder="All invitations"
+                    spellCheck={false}
+                    value={invitationDispatchReviewFilter}
+                    onChange={(event) => {
+                      setInvitationDispatchReviewFilter(event.target.value);
+                      setInvitationDispatchReview(null);
+                      setInvitationDispatchReviewIssue(null);
+                    }}
+                  />
+                </label>
+                <button
+                  className="icon-button"
+                  type="submit"
+                  disabled={busyAction !== null || !canManageCurrentMemberships}
+                >
+                  <RefreshCw size={15} />
+                  {busyAction === "invitation-dispatch-review"
+                    ? "Loading"
+                    : "Load review"}
+                </button>
+              </form>
+
+              {invitationDispatchReview ? (
+                <>
+                  <div className="invitation-reconciliation-summary">
+                    <div>
+                      <span>Needs review</span>
+                      <strong>
+                        {
+                          invitationDispatchReview.summary
+                            .reconciliationRequiredCount
+                        }
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Recent prepared</span>
+                      <strong>
+                        {invitationDispatchReview.summary.recentPreparedCount}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Provider accepted</span>
+                      <strong>
+                        {
+                          invitationDispatchReview.summary
+                            .acceptedByProviderCount
+                        }
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Provider failed</span>
+                      <strong>
+                        {invitationDispatchReview.summary.providerFailedCount}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="invitation-reconciliation-list">
+                    {invitationDispatchReview.reviews.map((review) => (
+                      <article
+                        className={`invitation-reconciliation-row status-${review.reviewState}`}
+                        key={review.id}
+                      >
+                        <div className="invitation-reconciliation-identity">
+                          <span>Attempt {review.id}</span>
+                          <small>Invitation {review.invitationId}</small>
+                        </div>
+                        <strong>{formatStatus(review.reviewState)}</strong>
+                        <div className="invitation-reconciliation-provider">
+                          <span>
+                            {review.provider} |{" "}
+                            {formatStatus(review.attemptStatus)}
+                          </span>
+                          <small>
+                            Prepared {formatDateTime(review.preparedAt)}
+                          </small>
+                          {review.providerMessageId ? (
+                            <small>Message {review.providerMessageId}</small>
+                          ) : review.failureCode ? (
+                            <small>
+                              Failure {formatStatus(review.failureCode)}
+                            </small>
+                          ) : null}
+                        </div>
+                        <div className="invitation-reconciliation-action">
+                          <span>{formatStatus(review.recommendedAction)}</span>
+                          <small>Age {formatDuration(review.ageSeconds)}</small>
+                        </div>
+                      </article>
+                    ))}
+                    {invitationDispatchReview.reviews.length === 0 ? (
+                      <div className="empty-state">
+                        No dispatch attempts match the current scope
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="invitation-reconciliation-footnote">
+                    <span>
+                      Stale threshold{" "}
+                      {formatDuration(
+                        invitationDispatchReview.summary.stalePreparedSeconds
+                      )}
+                    </span>
+                    <span>
+                      {invitationDispatchReview.summary.totalCount} attempts
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div aria-live="polite" className="empty-state" role="status">
+                  {invitationDispatchReviewIssue ??
+                    (canManageCurrentMemberships
+                      ? "No dispatch review loaded"
+                      : "Manager session required")}
+                </div>
+              )}
             </div>
           </section>
 
@@ -4235,9 +4478,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-079 dispatch reconciliation API</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-080 dispatch reconciliation UI</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-080 dispatch reconciliation UI</span>
+                  <span>T-081 Provider webhook verification</span>
                 </div>
               </div>
             </div>

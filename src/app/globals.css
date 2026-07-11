@@ -568,6 +568,116 @@ button {
   padding-top: 14px;
 }
 
+.invitation-reconciliation {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.invitation-reconciliation-toolbar {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(220px, 1fr) auto;
+}
+
+.invitation-reconciliation-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.invitation-reconciliation-summary div {
+  background: var(--surface-muted);
+  border-radius: 8px;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.invitation-reconciliation-summary span,
+.invitation-reconciliation-row small,
+.invitation-reconciliation-footnote {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.invitation-reconciliation-summary strong {
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.invitation-reconciliation-list {
+  display: grid;
+  gap: 10px;
+}
+
+.invitation-reconciliation-row {
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns:
+    minmax(220px, 1.25fr)
+    minmax(150px, auto)
+    minmax(170px, 0.9fr)
+    minmax(170px, 0.9fr);
+  padding: 12px;
+}
+
+.invitation-reconciliation-identity,
+.invitation-reconciliation-provider,
+.invitation-reconciliation-action {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.invitation-reconciliation-identity span,
+.invitation-reconciliation-provider span,
+.invitation-reconciliation-action span {
+  font-size: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.invitation-reconciliation-row > strong {
+  background: var(--surface-muted);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 5px 8px;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.invitation-reconciliation-row.status-reconciliation_required > strong,
+.invitation-reconciliation-row.status-provider_failed > strong {
+  background: #fff1f0;
+  color: var(--danger);
+}
+
+.invitation-reconciliation-row.status-recent_prepared > strong {
+  background: #fff7e6;
+  color: var(--warning);
+}
+
+.invitation-reconciliation-row.status-accepted_by_provider > strong {
+  background: #e7f8ee;
+  color: var(--success);
+}
+
+.invitation-reconciliation-footnote {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: space-between;
+}
+
 .invitation-review-grid {
   display: grid;
   gap: 10px;
@@ -1420,6 +1530,19 @@ button {
   .invitation-review-row.status-accepted strong {
     background: #173b27;
   }
+
+  .invitation-reconciliation-row.status-reconciliation_required > strong,
+  .invitation-reconciliation-row.status-provider_failed > strong {
+    background: #3d1f1f;
+  }
+
+  .invitation-reconciliation-row.status-recent_prepared > strong {
+    background: #3b2d12;
+  }
+
+  .invitation-reconciliation-row.status-accepted_by_provider > strong {
+    background: #173b27;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -1492,6 +1615,9 @@ button {
   .invitation-output,
   .invitation-review-grid,
   .invitation-review-row,
+  .invitation-reconciliation-toolbar,
+  .invitation-reconciliation-summary,
+  .invitation-reconciliation-row,
   .invitation-row,
   .permission-grant-form,
   .permission-grant-actions,
