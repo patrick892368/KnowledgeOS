@@ -620,11 +620,74 @@ button {
   font-weight: 800;
 }
 
+.invitation-list-header {
+  flex-wrap: wrap;
+}
+
+.invitation-list-header-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .invitation-row,
 .permission-grant-row {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px;
+}
+
+.invitation-row {
+  display: grid;
+  grid-template-columns:
+    minmax(150px, 1fr)
+    minmax(150px, 0.8fr)
+    minmax(220px, 1.25fr)
+    auto;
+}
+
+.invitation-dispatch-status {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.invitation-dispatch-status span,
+.invitation-dispatch-status small {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.invitation-dispatch-status strong {
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  text-transform: capitalize;
+}
+
+.invitation-dispatch-status.status-accepted_by_provider strong {
+  color: var(--success);
+}
+
+.invitation-dispatch-status.status-provider_failed strong,
+.invitation-dispatch-status.status-request_failed strong,
+.invitation-dispatch-status.status-reconciliation_required strong {
+  color: var(--danger);
+}
+
+.invitation-dispatch-status.status-existing_attempt strong {
+  color: var(--warning);
+}
+
+.invitation-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .invitation-review-row {
@@ -1440,6 +1503,8 @@ button {
 
   .invitation-row,
   .invitation-row-meta,
+  .invitation-row-actions,
+  .invitation-list-header-meta,
   .permission-grant-row,
   .permission-grant-row-meta {
     display: grid;

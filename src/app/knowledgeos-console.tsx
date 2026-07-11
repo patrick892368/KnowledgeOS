@@ -14,6 +14,7 @@ import {
   MessageSquare,
   RefreshCw,
   Search,
+  Send,
   ShieldCheck,
   Trash2,
   Upload,
@@ -37,6 +38,15 @@ import {
 } from "@/connectors/status";
 import type { NormalizedIngestionResult } from "@/ingestion/types";
 import { parseInvitationAcceptanceDeepLink } from "@/invitations/deep-link";
+import {
+  canStartInvitationDispatch,
+  createInvitationDispatchRequest,
+  createInvitationDispatchRequestFailure,
+  invitationDispatchActionLabel,
+  isInvitationDispatchEligible,
+  parseInvitationDispatchUiOutcome,
+  type InvitationDispatchUiState
+} from "@/invitations/dispatch-ui";
 import { createInvitationReviewSummary } from "@/invitations/review";
 import { createConnectorReliabilitySummary } from "@/quality/connector-reliability";
 import { createSourceFreshnessSummary } from "@/quality/freshness";
@@ -386,6 +396,11 @@ export function KnowledgeOSConsole() {
   const [invitationResult, setInvitationResult] =
     useState<InvitationResult | null>(null);
   const [invitations, setInvitations] = useState<ManagedInvitation[]>([]);
+  const [invitationDispatches, setInvitationDispatches] = useState<
+    Record<string, InvitationDispatchUiState>
+  >({});
+  const [pendingDispatchInvitationId, setPendingDispatchInvitationId] =
+    useState<string | null>(null);
   const [pendingRevokeInvitationId, setPendingRevokeInvitationId] =
     useState<string | null>(null);
   const [acceptanceInvitationId, setAcceptanceInvitationId] = useState("");
@@ -438,6 +453,7 @@ export function KnowledgeOSConsole() {
     | "member-role"
     | "invitation"
     | "invitations"
+    | "invitation-dispatch"
     | "invitation-revoke"
     | "invitation-accept"
     | "audit-events"
@@ -1048,6 +1064,7 @@ export function KnowledgeOSConsole() {
     }
 
     setBusyAction("invitations");
+    setPendingDispatchInvitationId(null);
     setPendingRevokeInvitationId(null);
     setError(null);
 
@@ -1121,11 +1138,99 @@ export function KnowledgeOSConsole() {
 
   function requestInvitationRevoke(invitationId: string) {
     if (pendingRevokeInvitationId !== invitationId) {
+      setPendingDispatchInvitationId(null);
       setPendingRevokeInvitationId(invitationId);
       return;
     }
 
     void revokeInvitation(invitationId);
+  }
+
+  async function dispatchInvitationFromUi(invitationId: string) {
+    if (!canManageCurrentMemberships) {
+      setError("Owner or admin signed session is required.");
+      return;
+    }
+
+    let submission: ReturnType<typeof createInvitationDispatchRequest>;
+
+    try {
+      submission = createInvitationDispatchRequest({
+        invitationId,
+        current: invitationDispatches[invitationId]
+      });
+    } catch {
+      setError("Invitation dispatch request could not be created.");
+      return;
+    }
+
+    setPendingDispatchInvitationId(null);
+    setBusyAction("invitation-dispatch");
+    setError(null);
+    setInvitationDispatches((current) => ({
+      ...current,
+      [invitationId]: submission.state
+    }));
+
+    try {
+      const response = await fetch("/api/admin/invitations/dispatch", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(submission.request)
+      });
+      const payload = (await response.json()) as unknown;
+      const outcome = parseInvitationDispatchUiOutcome(
+        payload,
+        submission.request
+      );
+
+      setInvitationDispatches((current) => ({
+        ...current,
+        [invitationId]: outcome
+      }));
+
+      if (
+        outcome.phase === "request_failed" ||
+        outcome.phase === "provider_failed" ||
+        outcome.phase === "reconciliation_required"
+      ) {
+        setError(outcome.message);
+      }
+    } catch {
+      const failedState = createInvitationDispatchRequestFailure(
+        submission.state
+      );
+
+      setInvitationDispatches((current) => ({
+        ...current,
+        [invitationId]: failedState
+      }));
+      setError(failedState.message);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  function requestInvitationDispatch(invitation: ManagedInvitation) {
+    const dispatchState = invitationDispatches[invitation.id];
+
+    if (
+      !isInvitationDispatchEligible(invitation) ||
+      !canStartInvitationDispatch(dispatchState)
+    ) {
+      return;
+    }
+
+    if (pendingDispatchInvitationId !== invitation.id) {
+      setPendingRevokeInvitationId(null);
+      setPendingDispatchInvitationId(invitation.id);
+      return;
+    }
+
+    void dispatchInvitationFromUi(invitation.id);
   }
 
   async function acceptInvitationFromUi() {
@@ -2156,9 +2261,22 @@ export function KnowledgeOSConsole() {
             <div className="invitation-list">
               <div className="invitation-list-header">
                 <span>Durable invitations</span>
-                <span className="count-pill">{invitations.length} invites</span>
+                <div className="invitation-list-header-meta">
+                  <span className="status-pill">
+                    <Mail size={13} />
+                    Provider status only
+                  </span>
+                  <span className="count-pill">{invitations.length} invites</span>
+                </div>
               </div>
-              {invitations.map((invitation) => (
+              {invitations.map((invitation) => {
+                const dispatchState = invitationDispatches[invitation.id];
+                const dispatchEligible = isInvitationDispatchEligible(invitation);
+                const canDispatch =
+                  dispatchEligible && canStartInvitationDispatch(dispatchState);
+                const actionLabel = invitationDispatchActionLabel(dispatchState);
+
+                return (
                 <article className="invitation-row" key={invitation.id}>
                   <div className="invitation-row-main">
                     <span>{invitation.email}</span>
@@ -2180,25 +2298,70 @@ export function KnowledgeOSConsole() {
                       <small>Created {formatActivityTime(invitation.createdAt)}</small>
                     )}
                   </div>
-                  <button
-                    className="icon-button"
-                    type="button"
-                    onClick={() => requestInvitationRevoke(invitation.id)}
-                    disabled={
-                      busyAction !== null ||
-                      !canManageCurrentMemberships ||
-                      invitation.status !== "pending"
-                    }
+                  <div
+                    className={`invitation-dispatch-status status-${
+                      dispatchState?.phase ?? "idle"
+                    }`}
                   >
-                    <Trash2 size={15} />
-                    {invitation.status !== "pending"
-                      ? formatStatus(invitation.status)
-                      : pendingRevokeInvitationId === invitation.id
-                        ? "Confirm"
-                        : "Revoke"}
-                  </button>
+                    <span>Provider status</span>
+                    <strong>
+                      {dispatchState
+                        ? formatStatus(dispatchState.phase)
+                        : "not sent"}
+                    </strong>
+                    <small>
+                      {dispatchState?.message ??
+                        "Provider acceptance only; inbox state unknown."}
+                    </small>
+                    {dispatchState ? (
+                      <small>
+                        {dispatchState.provider ?? "provider"} | attempt {" "}
+                        {dispatchState.attemptId}
+                      </small>
+                    ) : null}
+                  </div>
+                  <div className="invitation-row-actions">
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => requestInvitationDispatch(invitation)}
+                      disabled={
+                        busyAction !== null ||
+                        !canManageCurrentMemberships ||
+                        !canDispatch
+                      }
+                    >
+                      <Send size={15} />
+                      {!dispatchEligible
+                        ? invitation.status === "pending"
+                          ? "Expired"
+                          : formatStatus(invitation.status)
+                        : pendingDispatchInvitationId === invitation.id &&
+                            canDispatch
+                          ? `Confirm ${actionLabel.toLowerCase()}`
+                          : actionLabel}
+                    </button>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => requestInvitationRevoke(invitation.id)}
+                      disabled={
+                        busyAction !== null ||
+                        !canManageCurrentMemberships ||
+                        invitation.status !== "pending"
+                      }
+                    >
+                      <Trash2 size={15} />
+                      {invitation.status !== "pending"
+                        ? formatStatus(invitation.status)
+                        : pendingRevokeInvitationId === invitation.id
+                          ? "Confirm revoke"
+                          : "Revoke"}
+                    </button>
+                  </div>
                 </article>
-              ))}
+                );
+              })}
               {invitations.length === 0 ? (
                 <div className="empty-state">No durable invitations loaded</div>
               ) : null}
@@ -4059,9 +4222,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-076 invitation dispatch API</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-077 invitation dispatch UI</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-077 invitation dispatch UI</span>
+                  <span>T-078 invitation dispatch policy</span>
                 </div>
               </div>
             </div>
