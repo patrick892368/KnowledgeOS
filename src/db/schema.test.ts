@@ -4,6 +4,8 @@ import { databaseTableNames, embeddingDimensions } from "./model";
 import {
   documentStatusEnum,
   embeddings,
+  invitationDeliveryAttempts,
+  invitationDeliveryAttemptStatusEnum,
   invitationStatusEnum,
   kpiTelemetryCategoryEnum,
   kpiTelemetrySourceEnum,
@@ -39,6 +41,11 @@ describe("database schema", () => {
       "revoked",
       "expired"
     ]);
+    expect(invitationDeliveryAttemptStatusEnum.enumValues).toEqual([
+      "prepared",
+      "accepted_by_provider",
+      "provider_failed"
+    ]);
     expect(sourceTypeEnum.enumValues).toContain("repository");
     expect(sourceStatusEnum.enumValues).toContain("indexing");
     expect(documentStatusEnum.enumValues).toContain("indexed");
@@ -64,5 +71,12 @@ describe("database schema", () => {
     expect(embeddings.embedding.getSQLType()).toBe(
       `vector(${embeddingDimensions})`
     );
+  });
+
+  it("keeps invitation delivery attempts free of secret-bearing columns", () => {
+    expect(invitationDeliveryAttempts).not.toHaveProperty("token");
+    expect(invitationDeliveryAttempts).not.toHaveProperty("rawToken");
+    expect(invitationDeliveryAttempts).not.toHaveProperty("tokenHash");
+    expect(invitationDeliveryAttempts).not.toHaveProperty("providerPayload");
   });
 });

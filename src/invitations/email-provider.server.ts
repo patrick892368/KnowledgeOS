@@ -162,7 +162,7 @@ function validateDeliveryPlan(plan: InvitationDeliveryPlan, now: Date): void {
   }
 }
 
-function validateProviderName(value: string): string {
+export function parseInvitationEmailProviderName(value: string): string {
   const name = value.trim();
 
   if (
@@ -180,10 +180,7 @@ function validateProviderName(value: string): string {
   return name;
 }
 
-function validateMessageId(
-  value: unknown,
-  secret: InvitationDeliveryPlan["secret"]
-): string {
+export function parseInvitationEmailProviderMessageId(value: unknown): string {
   const messageId = typeof value === "string" ? value.trim() : "";
   const containsControlCharacter = Array.from(messageId).some((character) => {
     const code = character.charCodeAt(0);
@@ -193,7 +190,25 @@ function validateMessageId(
   if (
     !messageId ||
     messageId.length > maxProviderMessageIdLength ||
-    containsControlCharacter ||
+    containsControlCharacter
+  ) {
+    throw new InvitationEmailDeliveryError(
+      "provider_failed",
+      "Invitation email provider returned an invalid acceptance response.",
+      true
+    );
+  }
+
+  return messageId;
+}
+
+function validateMessageId(
+  value: unknown,
+  secret: InvitationDeliveryPlan["secret"]
+): string {
+  const messageId = parseInvitationEmailProviderMessageId(value);
+
+  if (
     messageId.includes(secret.rawToken) ||
     messageId.includes(secret.tokenHash)
   ) {
@@ -260,7 +275,7 @@ export async function deliverInvitationEmail(input: {
     );
   }
 
-  const providerName = validateProviderName(input.provider.name);
+  const providerName = parseInvitationEmailProviderName(input.provider.name);
   const acceptedAt = input.now ?? new Date();
   const payload = createInvitationEmailProviderPayload({
     plan: input.plan,

@@ -5,6 +5,7 @@ import {
   canRoleManagePermissionGrants,
   databaseTableNames,
   embeddingDimensions,
+  invitationDeliveryAttemptStatuses,
   invitationStatuses,
   isMembershipRole,
   isTerminalWorkflowRunStatus,
@@ -24,6 +25,7 @@ describe("database model constants", () => {
       "users",
       "memberships",
       "invitations",
+      "invitation_delivery_attempts",
       "sources",
       "documents",
       "chunks",
@@ -50,6 +52,15 @@ describe("database model constants", () => {
       "revoked",
       "expired"
     ]);
+  });
+
+  it("defines token-free invitation delivery attempt states", () => {
+    expect(invitationDeliveryAttemptStatuses).toEqual([
+      "prepared",
+      "accepted_by_provider",
+      "provider_failed"
+    ]);
+    expect(invitationDeliveryAttemptStatuses).not.toContain("delivered");
   });
 
   it("keeps owner and admin as permission administrators", () => {

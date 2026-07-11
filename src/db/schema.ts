@@ -18,6 +18,7 @@ import {
   databaseTableNames,
   documentStatuses,
   embeddingDimensions,
+  invitationDeliveryAttemptStatuses,
   invitationStatuses,
   kpiTelemetryCategories,
   kpiTelemetrySources,
@@ -52,6 +53,10 @@ export const membershipRoleEnum = knowledgeos.enum(
 export const invitationStatusEnum = knowledgeos.enum(
   "invitation_status",
   invitationStatuses
+);
+export const invitationDeliveryAttemptStatusEnum = knowledgeos.enum(
+  "invitation_delivery_attempt_status",
+  invitationDeliveryAttemptStatuses
 );
 export const sourceTypeEnum = knowledgeos.enum("source_type", sourceTypes);
 export const sourceStatusEnum = knowledgeos.enum(
@@ -163,6 +168,81 @@ export const invitations = knowledgeos.table(
     index("invitations_org_status_idx").on(table.organizationId, table.status),
     check("invitations_email_not_empty", sql`${table.email} <> ''`),
     check("invitations_token_hash_not_empty", sql`${table.tokenHash} <> ''`)
+  ]
+);
+
+export const invitationDeliveryAttempts = knowledgeos.table(
+  "invitation_delivery_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    invitationId: uuid("invitation_id")
+      .notNull()
+      .references(() => invitations.id, { onDelete: "cascade" }),
+    provider: varchar("provider", { length: 64 }).notNull(),
+    status: invitationDeliveryAttemptStatusEnum("status")
+      .default("prepared")
+      .notNull(),
+    providerMessageId: varchar("provider_message_id", { length: 256 }),
+    failureCode: varchar("failure_code", { length: 80 }),
+    deliveryExpiresAt: timestamp("delivery_expires_at", {
+      withTimezone: true
+    }).notNull(),
+    preparedAt: timestamp("prepared_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    providerAcceptedAt: timestamp("provider_accepted_at", {
+      withTimezone: true
+    }),
+    providerFailedAt: timestamp("provider_failed_at", {
+      withTimezone: true
+    }),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null"
+    }),
+    ...timestamps
+  },
+  (table) => [
+    index("invitation_delivery_attempts_org_status_created_idx").on(
+      table.organizationId,
+      table.status,
+      table.createdAt
+    ),
+    index("invitation_delivery_attempts_invitation_created_idx").on(
+      table.invitationId,
+      table.createdAt
+    ),
+    uniqueIndex("invitation_delivery_attempts_provider_message_uidx")
+      .on(table.provider, table.providerMessageId)
+      .where(sql`${table.providerMessageId} is not null`),
+    check(
+      "invitation_delivery_attempts_provider_not_empty",
+      sql`${table.provider} <> ''`
+    ),
+    check(
+      "invitation_delivery_attempts_message_not_empty",
+      sql`${table.providerMessageId} is null or ${table.providerMessageId} <> ''`
+    ),
+    check(
+      "invitation_delivery_attempts_failure_not_empty",
+      sql`${table.failureCode} is null or ${table.failureCode} <> ''`
+    ),
+    check(
+      "invitation_delivery_attempts_expiry_after_prepared",
+      sql`${table.deliveryExpiresAt} > ${table.preparedAt}`
+    ),
+    check(
+      "invitation_delivery_attempts_state_fields",
+      sql`(
+        (${table.status} = 'prepared' and ${table.providerMessageId} is null and ${table.failureCode} is null and ${table.providerAcceptedAt} is null and ${table.providerFailedAt} is null)
+        or
+        (${table.status} = 'accepted_by_provider' and ${table.providerMessageId} is not null and ${table.failureCode} is null and ${table.providerAcceptedAt} is not null and ${table.providerFailedAt} is null)
+        or
+        (${table.status} = 'provider_failed' and ${table.providerMessageId} is null and ${table.failureCode} is not null and ${table.providerAcceptedAt} is null and ${table.providerFailedAt} is not null)
+      )`
+    )
   ]
 );
 
@@ -450,6 +530,7 @@ export const kpiTelemetryEvents = knowledgeos.table(
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   memberships: many(memberships),
   invitations: many(invitations),
+  invitationDeliveryAttempts: many(invitationDeliveryAttempts),
   sources: many(sources),
   documents: many(documents),
   workflows: many(workflows),
@@ -461,6 +542,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
 export const usersRelations = relations(users, ({ many }) => ({
   memberships: many(memberships),
   invitations: many(invitations),
+  invitationDeliveryAttempts: many(invitationDeliveryAttempts),
   createdSources: many(sources),
   workflowRuns: many(workflowRuns),
   auditEvents: many(auditEvents)
@@ -477,7 +559,7 @@ export const membershipsRelations = relations(memberships, ({ one }) => ({
   })
 }));
 
-export const invitationsRelations = relations(invitations, ({ one }) => ({
+export const invitationsRelations = relations(invitations, ({ one, many }) => ({
   organization: one(organizations, {
     fields: [invitations.organizationId],
     references: [organizations.id]
@@ -485,8 +567,27 @@ export const invitationsRelations = relations(invitations, ({ one }) => ({
   inviter: one(users, {
     fields: [invitations.invitedBy],
     references: [users.id]
-  })
+  }),
+  deliveryAttempts: many(invitationDeliveryAttempts)
 }));
+
+export const invitationDeliveryAttemptsRelations = relations(
+  invitationDeliveryAttempts,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [invitationDeliveryAttempts.organizationId],
+      references: [organizations.id]
+    }),
+    invitation: one(invitations, {
+      fields: [invitationDeliveryAttempts.invitationId],
+      references: [invitations.id]
+    }),
+    creator: one(users, {
+      fields: [invitationDeliveryAttempts.createdBy],
+      references: [users.id]
+    })
+  })
+);
 
 export const sourcesRelations = relations(sources, ({ one, many }) => ({
   organization: one(organizations, {
@@ -601,6 +702,7 @@ export const schemaTables = {
   users,
   memberships,
   invitations,
+  invitation_delivery_attempts: invitationDeliveryAttempts,
   sources,
   documents,
   chunks,
@@ -617,6 +719,8 @@ export type Organization = typeof organizations.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type Membership = typeof memberships.$inferSelect;
 export type Invitation = typeof invitations.$inferSelect;
+export type InvitationDeliveryAttempt =
+  typeof invitationDeliveryAttempts.$inferSelect;
 export type Source = typeof sources.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type Chunk = typeof chunks.$inferSelect;

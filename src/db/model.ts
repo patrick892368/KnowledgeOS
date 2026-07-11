@@ -11,6 +11,14 @@ export const invitationStatuses = [
 ] as const;
 export type InvitationStatus = (typeof invitationStatuses)[number];
 
+export const invitationDeliveryAttemptStatuses = [
+  "prepared",
+  "accepted_by_provider",
+  "provider_failed"
+] as const;
+export type InvitationDeliveryAttemptStatus =
+  (typeof invitationDeliveryAttemptStatuses)[number];
+
 export const sourceTypes = [
   "document",
   "url",
@@ -103,6 +111,7 @@ export const databaseTableNames = [
   "users",
   "memberships",
   "invitations",
+  "invitation_delivery_attempts",
   "sources",
   "documents",
   "chunks",
