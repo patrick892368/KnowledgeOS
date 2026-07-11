@@ -36,6 +36,7 @@ import {
   type ConnectorSyncMode
 } from "@/connectors/status";
 import type { NormalizedIngestionResult } from "@/ingestion/types";
+import { parseInvitationAcceptanceDeepLink } from "@/invitations/deep-link";
 import { createInvitationReviewSummary } from "@/invitations/review";
 import { createConnectorReliabilitySummary } from "@/quality/connector-reliability";
 import { createSourceFreshnessSummary } from "@/quality/freshness";
@@ -154,6 +155,11 @@ type InvitationAcceptanceResult = {
   membership: InvitationAcceptanceMembership;
   session: AuthSession;
   auditAction?: string;
+};
+
+type InvitationAcceptanceLinkState = {
+  status: "loaded" | "rejected" | "sanitized";
+  message: string;
 };
 
 type PermissionViolationSignal = {
@@ -392,6 +398,8 @@ export function KnowledgeOSConsole() {
     code: string;
     message: string;
   } | null>(null);
+  const [acceptanceLinkState, setAcceptanceLinkState] =
+    useState<InvitationAcceptanceLinkState | null>(null);
   const [auditEvents, setAuditEvents] = useState<ManagedAuditEvent[]>([]);
   const [permissionViolations, setPermissionViolations] = useState<
     PermissionViolationSignal[]
@@ -647,6 +655,61 @@ export function KnowledgeOSConsole() {
 
   useEffect(() => {
     void loadCurrentSession({ quiet: true });
+  }, []);
+
+  useEffect(() => {
+    const parsed = parseInvitationAcceptanceDeepLink(window.location.search);
+
+    if (parsed.sanitizedSearch !== window.location.search) {
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${window.location.pathname}${parsed.sanitizedSearch}${window.location.hash}`
+      );
+    }
+
+    if (parsed.context) {
+      setAcceptanceInvitationId(parsed.context.invitationId);
+      setAcceptanceEmail(parsed.context.email);
+      setAcceptanceOrganizationId(parsed.context.organizationId ?? "");
+      setAcceptanceToken("");
+      setAcceptanceIssue(null);
+      setAcceptanceLinkState({
+        status: "loaded",
+        message: parsed.sensitiveParametersRemoved
+          ? "Acceptance context loaded; sensitive URL values removed."
+          : "Acceptance context loaded from URL."
+      });
+      document
+        .getElementById("invitation-acceptance")
+        ?.scrollIntoView({ block: "start" });
+      return;
+    }
+
+    if (parsed.issue) {
+      setAcceptanceToken("");
+      setAcceptanceResult(null);
+      setAcceptanceIssue(parsed.issue);
+      setAcceptanceLinkState({
+        status: "rejected",
+        message: parsed.issue.message
+      });
+      document
+        .getElementById("invitation-acceptance")
+        ?.scrollIntoView({ block: "start" });
+      return;
+    }
+
+    if (parsed.sensitiveParametersRemoved) {
+      setAcceptanceToken("");
+      setAcceptanceLinkState({
+        status: "sanitized",
+        message: "Sensitive URL values removed."
+      });
+      document
+        .getElementById("invitation-acceptance")
+        ?.scrollIntoView({ block: "start" });
+    }
   }, []);
 
   useEffect(() => {
@@ -1965,13 +2028,29 @@ export function KnowledgeOSConsole() {
               <div className="empty-state">No invitation planned</div>
             )}
 
-            <div className="invitation-acceptance">
+            <div className="invitation-acceptance" id="invitation-acceptance">
               <div className="invitation-list-header">
                 <span>Accept invitation</span>
                 <span className="count-pill">
-                  {acceptanceResult ? "Accepted" : "Token cleared after submit"}
+                  {acceptanceResult
+                    ? "Accepted"
+                    : acceptanceLinkState?.status === "loaded"
+                      ? "Link context loaded"
+                      : "Token cleared after submit"}
                 </span>
               </div>
+
+              {acceptanceLinkState ? (
+                <div
+                  aria-live="polite"
+                  className={`identity-note invitation-link-status status-${acceptanceLinkState.status}`}
+                  role="status"
+                >
+                  <LinkIcon size={16} />
+                  <span>{acceptanceLinkState.message}</span>
+                  <span className="count-pill">Token not imported</span>
+                </div>
+              ) : null}
 
               <div className="invitation-acceptance-form">
                 <label className="field">
@@ -3940,9 +4019,25 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-066 invitation acceptance UI</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-067 invitation resend review</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-068 invitation delivery contract</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-069 invitation resend API</span>
+                </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-070 invitation deep-link UX</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-067 invitation resend review</span>
+                  <span>T-071 invitation email provider contract</span>
                 </div>
               </div>
             </div>

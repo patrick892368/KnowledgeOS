@@ -466,6 +466,14 @@ button {
   padding-top: 14px;
 }
 
+.invitation-link-status {
+  flex-wrap: wrap;
+}
+
+.invitation-link-status .count-pill {
+  margin-left: auto;
+}
+
 .invitation-acceptance-form {
   align-items: end;
   display: grid;
