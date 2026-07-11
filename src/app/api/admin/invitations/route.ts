@@ -2,10 +2,15 @@ import { authErrorResponse, requireSession } from "@/auth/session";
 import { createDatabaseClient } from "@/db/client";
 import {
   listOrganizationInvitations,
+  prepareInvitationResend,
   persistInvitation,
   revokeInvitation,
   type PersistedInvitation
 } from "@/db/invitation-repository";
+import {
+  parseInvitationResendPayload,
+  type PublicInvitationDeliveryPlan
+} from "@/invitations/delivery";
 import {
   createInvitationPlan,
   InvitationLifecycleError,
@@ -38,6 +43,21 @@ function serializeInvitation(invitation: InvitationPlan | PersistedInvitation) {
     ...("revokedAt" in invitation && invitation.revokedAt
       ? { revokedAt: invitation.revokedAt.toISOString() }
       : {})
+  };
+}
+
+function serializeDelivery(delivery: PublicInvitationDeliveryPlan) {
+  return {
+    invitationId: delivery.invitationId,
+    organizationId: delivery.organizationId,
+    email: delivery.email,
+    role: delivery.role,
+    status: delivery.status,
+    acceptanceRoute: delivery.acceptanceRoute,
+    deliveryExpiresAt: delivery.deliveryExpiresAt.toISOString(),
+    invitationExpiresAt: delivery.invitationExpiresAt.toISOString(),
+    tokenExposure: delivery.tokenExposure,
+    auditIntent: delivery.auditIntent
   };
 }
 
@@ -125,6 +145,51 @@ export async function POST(request: Request) {
       },
       { status: 201 }
     );
+  } catch (error) {
+    if (error instanceof InvitationLifecycleError) {
+      return invitationLifecycleErrorResponse(error);
+    }
+
+    return authErrorResponse(error);
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const session = await requireSession();
+    let payload: unknown;
+
+    try {
+      payload = await request.json();
+    } catch {
+      throw new InvitationLifecycleError(
+        "invalid_payload",
+        "Request body must be valid JSON."
+      );
+    }
+
+    const resend = parseInvitationResendPayload(payload);
+
+    try {
+      const result = await prepareInvitationResend(createDatabaseClient(), {
+        session,
+        invitationId: resend.invitationId,
+        deliveryTtlHours: resend.deliveryTtlHours
+      });
+
+      return Response.json({
+        mode: "resend_prepared",
+        invitation: serializeInvitation(result.invitation),
+        delivery: serializeDelivery(result.delivery),
+        auditEvent: result.auditEvent
+      });
+    } catch (error) {
+      if (error instanceof InvitationLifecycleError) {
+        throw error;
+      }
+
+      throw toDatabaseUnavailableError(error);
+    }
   } catch (error) {
     if (error instanceof InvitationLifecycleError) {
       return invitationLifecycleErrorResponse(error);

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   requireSession: vi.fn(),
   createDatabaseClient: vi.fn(),
   listOrganizationInvitations: vi.fn(),
+  prepareInvitationResend: vi.fn(),
   revokeInvitation: vi.fn(),
   persistInvitation: vi.fn()
 }));
@@ -31,12 +32,13 @@ vi.mock("@/db/invitation-repository", async (importOriginal) => {
   return {
     ...actual,
     listOrganizationInvitations: mocks.listOrganizationInvitations,
+    prepareInvitationResend: mocks.prepareInvitationResend,
     revokeInvitation: mocks.revokeInvitation,
     persistInvitation: mocks.persistInvitation
   };
 });
 
-import { DELETE, GET, POST } from "./route";
+import { DELETE, GET, PATCH, POST } from "./route";
 
 const session: AuthSession = {
   userId: "22222222-2222-4222-8222-222222222222",
@@ -58,6 +60,13 @@ function request(body: unknown): Request {
 function deleteRequest(body: unknown): Request {
   return new Request("http://knowledgeos.local/api/admin/invitations", {
     method: "DELETE",
+    body: JSON.stringify(body)
+  });
+}
+
+function patchRequest(body: unknown): Request {
+  return new Request("http://knowledgeos.local/api/admin/invitations", {
+    method: "PATCH",
     body: JSON.stringify(body)
   });
 }
@@ -102,6 +111,33 @@ const auditEvent = {
     ...auditIntent.metadata,
     persistenceMode: "created",
     plannedAction: "invitation.planned"
+  }
+};
+
+const deliveryPlan = {
+  invitationId: persistedInvitation.id,
+  organizationId: session.organizationId,
+  email: persistedInvitation.email,
+  role: persistedInvitation.role,
+  status: "pending",
+  acceptanceRoute: "/api/invitations/accept",
+  deliveryExpiresAt: new Date("2026-07-10T12:00:00.000Z"),
+  invitationExpiresAt: persistedInvitation.expiresAt,
+  tokenExposure: "not_exposed",
+  auditIntent: {
+    organizationId: session.organizationId,
+    actorUserId: null,
+    action: "invitation.delivery_planned",
+    resourceType: "organization",
+    resourceId: session.organizationId,
+    metadata: {
+      invitationId: persistedInvitation.id,
+      email: persistedInvitation.email,
+      role: persistedInvitation.role,
+      deliveryExpiresAt: "2026-07-10T12:00:00.000Z",
+      invitationExpiresAt: "2026-07-17T00:00:00.000Z",
+      tokenExposure: "not_exposed"
+    }
   }
 };
 
@@ -473,6 +509,225 @@ describe("GET /api/admin/invitations", () => {
 
     expect(response.status).toBe(503);
     expect(payload.error.code).toBe("database_unavailable");
+  });
+});
+
+describe("PATCH /api/admin/invitations", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("prepares a resend delivery plan for manager sessions", async () => {
+    const db = { name: "db" };
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockReturnValue(db);
+    mocks.prepareInvitationResend.mockResolvedValue({
+      invitation: persistedInvitation,
+      delivery: deliveryPlan,
+      auditEvent: {
+        ...auditIntent,
+        action: "invitation.resend_prepared",
+        metadata: {
+          invitationId: persistedInvitation.id,
+          email: persistedInvitation.email,
+          plannedAction: "invitation.delivery_planned",
+          tokenExposure: "not_exposed"
+        }
+      }
+    });
+
+    const response = await PATCH(
+      patchRequest({
+        invitationId: persistedInvitation.id,
+        deliveryTtlHours: 12
+      })
+    );
+    const payload = (await response.json()) as {
+      mode: string;
+      delivery: {
+        invitationId: string;
+        deliveryExpiresAt: string;
+        tokenExposure: string;
+        auditIntent: {
+          action: string;
+        };
+      };
+      auditEvent: {
+        action: string;
+        metadata: Record<string, unknown>;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.mode).toBe("resend_prepared");
+    expect(payload.delivery).toMatchObject({
+      invitationId: persistedInvitation.id,
+      deliveryExpiresAt: "2026-07-10T12:00:00.000Z",
+      tokenExposure: "not_exposed",
+      auditIntent: {
+        action: "invitation.delivery_planned"
+      }
+    });
+    expect(payload.auditEvent).toMatchObject({
+      action: "invitation.resend_prepared",
+      metadata: {
+        invitationId: persistedInvitation.id,
+        plannedAction: "invitation.delivery_planned",
+        tokenExposure: "not_exposed"
+      }
+    });
+    expect(JSON.stringify(payload)).not.toMatch(
+      /rawToken|tokenHash|resend-token|secret|password/i
+    );
+    expect(mocks.prepareInvitationResend).toHaveBeenCalledWith(
+      db,
+      expect.objectContaining({
+        session,
+        invitationId: persistedInvitation.id,
+        deliveryTtlHours: 12
+      })
+    );
+  });
+
+  it("rejects invalid resend payloads before database access", async () => {
+    mocks.requireSession.mockResolvedValue(session);
+
+    const response = await PATCH(patchRequest({ deliveryTtlHours: 12 }));
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(400);
+    expect(payload.error.code).toBe("invalid_payload");
+    expect(mocks.createDatabaseClient).not.toHaveBeenCalled();
+    expect(mocks.prepareInvitationResend).not.toHaveBeenCalled();
+  });
+
+  it("returns resend authorization and not-found failures safely", async () => {
+    const db = { name: "db" };
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockReturnValue(db);
+    mocks.prepareInvitationResend.mockRejectedValue(
+      new InvitationLifecycleError(
+        "not_found",
+        "Invitation was not found."
+      )
+    );
+
+    const response = await PATCH(
+      patchRequest({
+        invitationId: "99999999-9999-4999-8999-999999999999"
+      })
+    );
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(404);
+    expect(payload.error.code).toBe("not_found");
+  });
+
+  it("returns forbidden resend preparation failures", async () => {
+    const db = { name: "db" };
+    mocks.requireSession.mockResolvedValue({
+      ...session,
+      role: "viewer"
+    });
+    mocks.createDatabaseClient.mockReturnValue(db);
+    mocks.prepareInvitationResend.mockRejectedValue(
+      new InvitationLifecycleError(
+        "forbidden",
+        "Only owner or admin members can manage organization invitations."
+      )
+    );
+
+    const response = await PATCH(
+      patchRequest({
+        invitationId: persistedInvitation.id
+      })
+    );
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(403);
+    expect(payload.error.code).toBe("forbidden");
+  });
+
+  it("returns unsafe invitation status failures", async () => {
+    const db = { name: "db" };
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockReturnValue(db);
+    mocks.prepareInvitationResend.mockRejectedValue(
+      new InvitationLifecycleError(
+        "accepted_invitation",
+        "Accepted invitations cannot be delivered again."
+      )
+    );
+
+    const response = await PATCH(
+      patchRequest({
+        invitationId: persistedInvitation.id
+      })
+    );
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(410);
+    expect(payload.error.code).toBe("accepted_invitation");
+  });
+
+  it("returns database unavailable when resend preparation cannot open the database", async () => {
+    mocks.requireSession.mockResolvedValue(session);
+    mocks.createDatabaseClient.mockImplementation(() => {
+      throw new Error("DATABASE_URL is required to create a database client.");
+    });
+
+    const response = await PATCH(
+      patchRequest({
+        invitationId: persistedInvitation.id
+      })
+    );
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(503);
+    expect(payload.error.code).toBe("database_unavailable");
+  });
+
+  it("rejects unauthenticated resend preparation requests", async () => {
+    mocks.requireSession.mockRejectedValue(
+      new AuthError(
+        "unauthenticated",
+        "Authentication is required for this resource."
+      )
+    );
+
+    const response = await PATCH(
+      patchRequest({
+        invitationId: persistedInvitation.id
+      })
+    );
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+      };
+    };
+
+    expect(response.status).toBe(401);
+    expect(payload.error.code).toBe("unauthenticated");
   });
 });
 

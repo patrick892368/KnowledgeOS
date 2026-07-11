@@ -7,9 +7,11 @@ import type { Database } from "./client";
 import {
   acceptInvitation,
   createInvitationPersistenceAuditEvent,
+  createInvitationResendAuditEvent,
   createInvitationRevocationAuditEvent,
   hashInvitationToken,
   listOrganizationInvitations,
+  prepareInvitationResend,
   revokeInvitation,
   persistInvitation
 } from "./invitation-repository";
@@ -203,6 +205,47 @@ function createRevocationDatabaseDouble(rows: unknown[]) {
   };
 }
 
+function createResendDatabaseDouble(rows: unknown[]) {
+  const auditWrites: unknown[] = [];
+  const limit = vi.fn(async () => rows);
+  const where = vi.fn(() => ({
+    limit
+  }));
+  const from = vi.fn(() => ({
+    where
+  }));
+  const select = vi.fn(() => ({
+    from
+  }));
+  const auditValues = vi.fn(async (value: unknown) => {
+    auditWrites.push(value);
+  });
+  const tx = {
+    select,
+    insert: vi.fn((table: unknown) => {
+      if (table !== auditEvents) {
+        throw new Error("Unexpected insert table.");
+      }
+
+      return {
+        values: auditValues
+      };
+    })
+  };
+  const db = {
+    transaction: vi.fn(async (callback: (transaction: typeof tx) => unknown) =>
+      callback(tx)
+    )
+  };
+
+  return {
+    db: db as unknown as Database,
+    auditWrites,
+    auditValues,
+    select
+  };
+}
+
 function createAcceptanceDatabaseDouble(input: {
   invitationRows: unknown[];
   insertedUserRows: unknown[];
@@ -370,6 +413,49 @@ describe("createInvitationRevocationAuditEvent", () => {
   });
 });
 
+describe("createInvitationResendAuditEvent", () => {
+  it("records resend preparation metadata without exposing delivery secrets", () => {
+    const event = createInvitationResendAuditEvent({
+      session: ownerSession,
+      delivery: {
+        invitationId: invitationRow.id,
+        organizationId: ownerSession.organizationId,
+        email: invitationRow.email,
+        role: invitationRow.role,
+        status: "pending",
+        acceptanceRoute: "/api/invitations/accept",
+        deliveryExpiresAt: new Date("2026-07-10T12:00:00.000Z"),
+        invitationExpiresAt: invitationRow.expiresAt,
+        tokenExposure: "not_exposed",
+        auditIntent: {
+          organizationId: ownerSession.organizationId,
+          actorUserId: null,
+          action: "invitation.delivery_planned",
+          resourceType: "organization",
+          resourceId: ownerSession.organizationId,
+          metadata: {
+            invitationId: invitationRow.id,
+            email: invitationRow.email,
+            tokenExposure: "not_exposed"
+          }
+        }
+      }
+    });
+
+    expect(event).toMatchObject({
+      action: "invitation.resend_prepared",
+      actorUserId: ownerSession.userId,
+      metadata: {
+        invitationId: invitationRow.id,
+        email: invitationRow.email,
+        plannedAction: "invitation.delivery_planned",
+        tokenExposure: "not_exposed"
+      }
+    });
+    expect(JSON.stringify(event)).not.toMatch(/rawToken|tokenHash|secret/i);
+  });
+});
+
 describe("persistInvitation", () => {
   it("inserts a validated invitation and writes a create audit event", async () => {
     const db = createDatabaseDouble({
@@ -452,6 +538,112 @@ describe("persistInvitation", () => {
       })
     ).rejects.toThrow(InvitationLifecycleError);
     expect(db.invitationValues).not.toHaveBeenCalled();
+  });
+});
+
+describe("prepareInvitationResend", () => {
+  it("prepares a public delivery plan and writes a resend audit event", async () => {
+    const db = createResendDatabaseDouble([invitationRow]);
+
+    const result = await prepareInvitationResend(db.db, {
+      session: ownerSession,
+      invitationId: invitationRow.id,
+      now: new Date("2026-07-10T00:00:00.000Z"),
+      deliveryTtlHours: 12,
+      rawToken: "resend-token"
+    });
+
+    expect(result).toMatchObject({
+      invitation: invitationRow,
+      delivery: {
+        invitationId: invitationRow.id,
+        organizationId: ownerSession.organizationId,
+        email: invitationRow.email,
+        role: invitationRow.role,
+        status: "pending",
+        acceptanceRoute: "/api/invitations/accept",
+        deliveryExpiresAt: new Date("2026-07-10T12:00:00.000Z"),
+        invitationExpiresAt: invitationRow.expiresAt,
+        tokenExposure: "not_exposed",
+        auditIntent: {
+          action: "invitation.delivery_planned"
+        }
+      },
+      auditEvent: {
+        action: "invitation.resend_prepared",
+        actorUserId: ownerSession.userId,
+        metadata: {
+          invitationId: invitationRow.id,
+          plannedAction: "invitation.delivery_planned",
+          tokenExposure: "not_exposed"
+        }
+      }
+    });
+    expect(db.auditWrites).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toMatch(
+      /resend-token|rawToken|tokenHash|secret/i
+    );
+  });
+
+  it("rejects non-manager resend preparation before opening a transaction", async () => {
+    const db = {
+      transaction: vi.fn()
+    } as unknown as Database;
+
+    await expect(
+      prepareInvitationResend(db, {
+        session: {
+          ...ownerSession,
+          role: "viewer"
+        },
+        invitationId: invitationRow.id
+      })
+    ).rejects.toMatchObject({
+      code: "forbidden"
+    });
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("returns not found for missing or cross-organization invitations", async () => {
+    const db = createResendDatabaseDouble([]);
+
+    await expect(
+      prepareInvitationResend(db.db, {
+        session: ownerSession,
+        invitationId: "99999999-9999-4999-8999-999999999999"
+      })
+    ).rejects.toMatchObject({
+      code: "not_found"
+    });
+    expect(db.auditValues).not.toHaveBeenCalled();
+  });
+
+  it("rejects accepted, revoked, and expired invitations without audit writes", async () => {
+    for (const [row, code] of [
+      [acceptedInvitationRow, "accepted_invitation"],
+      [revokedInvitationRow, "revoked_invitation"],
+      [
+        {
+          ...invitationRow,
+          expiresAt: new Date("2026-07-09T23:59:59.000Z")
+        },
+        "expired_invitation"
+      ]
+    ] as const) {
+      const db = createResendDatabaseDouble([row]);
+
+      await expect(
+        prepareInvitationResend(db.db, {
+          session: ownerSession,
+          invitationId: invitationRow.id,
+          now: new Date("2026-07-10T00:00:00.000Z"),
+          rawToken: "resend-token"
+        })
+      ).rejects.toMatchObject({
+        code
+      });
+      expect(db.auditValues).not.toHaveBeenCalled();
+    }
   });
 });
 

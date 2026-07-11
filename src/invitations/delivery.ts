@@ -47,6 +47,11 @@ export interface InvitationDeliveryOptions {
   rawToken?: string;
 }
 
+export interface InvitationResendPayload {
+  invitationId: string;
+  deliveryTtlHours?: number;
+}
+
 const defaultDeliveryTtlHours = 24;
 const hourInMs = 60 * 60 * 1000;
 
@@ -79,6 +84,26 @@ function createDeliveryExpiresAt(input: {
     : input.invitationExpiresAt;
 }
 
+function parseDeliveryTtlHours(value: unknown): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 1 ||
+    value > 168
+  ) {
+    throw new InvitationLifecycleError(
+      "invalid_payload",
+      "deliveryTtlHours must be an integer between 1 and 168."
+    );
+  }
+
+  return value;
+}
+
 function rejectUnsafeDeliveryTarget(target: InvitationDeliveryTarget, now: Date) {
   if (target.status === "accepted") {
     throw new InvitationLifecycleError(
@@ -100,6 +125,37 @@ function rejectUnsafeDeliveryTarget(target: InvitationDeliveryTarget, now: Date)
       "Expired invitations require a new invitation before delivery."
     );
   }
+}
+
+export function parseInvitationResendPayload(
+  payload: unknown
+): InvitationResendPayload {
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    throw new InvitationLifecycleError(
+      "invalid_payload",
+      "Request body must be an object."
+    );
+  }
+
+  const candidate = payload as Partial<
+    Record<"invitationId" | "deliveryTtlHours", unknown>
+  >;
+  const invitationId =
+    typeof candidate.invitationId === "string"
+      ? candidate.invitationId.trim()
+      : "";
+
+  if (!invitationId) {
+    throw new InvitationLifecycleError(
+      "invalid_payload",
+      "invitationId is required."
+    );
+  }
+
+  return {
+    invitationId,
+    deliveryTtlHours: parseDeliveryTtlHours(candidate.deliveryTtlHours)
+  };
 }
 
 export function createInvitationDeliveryPlan(input: {

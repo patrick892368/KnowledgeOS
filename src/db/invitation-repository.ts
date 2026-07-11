@@ -16,6 +16,11 @@ import {
   type InvitationAcceptancePayload,
   type InvitationAcceptanceTarget
 } from "@/invitations/acceptance";
+import {
+  createInvitationDeliveryPlan,
+  type InvitationDeliveryTarget,
+  type PublicInvitationDeliveryPlan
+} from "@/invitations/delivery";
 import { hashInvitationToken } from "@/invitations/tokens";
 import { createBootstrapMembershipId } from "./identity-bootstrap-repository";
 
@@ -46,6 +51,12 @@ export interface InvitationPersistenceResult {
 
 export interface InvitationRevocationResult {
   invitation: PersistedInvitation;
+  auditEvent: typeof auditEvents.$inferInsert;
+}
+
+export interface InvitationResendPreparationResult {
+  invitation: PersistedInvitation;
+  delivery: PublicInvitationDeliveryPlan;
   auditEvent: typeof auditEvents.$inferInsert;
 }
 
@@ -137,6 +148,29 @@ export function createInvitationRevocationAuditEvent(input: {
   };
 }
 
+export function createInvitationResendAuditEvent(input: {
+  session: AuthSession;
+  delivery: PublicInvitationDeliveryPlan;
+}): typeof auditEvents.$inferInsert {
+  return {
+    organizationId: input.session.organizationId,
+    actorUserId: input.session.userId,
+    action: "invitation.resend_prepared",
+    resourceType: "organization",
+    resourceId: input.session.organizationId,
+    metadata: {
+      ...input.delivery.auditIntent.metadata,
+      invitationId: input.delivery.invitationId,
+      email: input.delivery.email,
+      role: input.delivery.role,
+      plannedAction: input.delivery.auditIntent.action,
+      deliveryExpiresAt: input.delivery.deliveryExpiresAt.toISOString(),
+      invitationExpiresAt: input.delivery.invitationExpiresAt.toISOString(),
+      tokenExposure: input.delivery.tokenExposure
+    }
+  };
+}
+
 function createInvitationAcceptanceAuditEvent(input: {
   plan: ReturnType<typeof createInvitationAcceptancePlan>;
   userId: string;
@@ -152,6 +186,26 @@ function createInvitationAcceptanceAuditEvent(input: {
       membershipId: input.membershipId,
       plannedAction: input.plan.auditIntent.action
     }
+  };
+}
+
+function toDeliveryTarget(
+  invitation: PersistedInvitation
+): InvitationDeliveryTarget {
+  if (invitation.role === "owner") {
+    throw new InvitationLifecycleError(
+      "forbidden",
+      "Owner invitations require a dedicated owner transfer workflow."
+    );
+  }
+
+  return {
+    id: invitation.id,
+    organizationId: invitation.organizationId,
+    email: invitation.email,
+    role: invitation.role,
+    status: invitation.status,
+    expiresAt: invitation.expiresAt
   };
 }
 
@@ -260,6 +314,65 @@ export async function persistInvitation(
       mode,
       invitation,
       auditIntent: persistedPlan.auditIntent,
+      auditEvent
+    };
+  });
+}
+
+export async function prepareInvitationResend(
+  db: Database,
+  input: {
+    session: AuthSession;
+    invitationId: string;
+    now?: Date;
+    deliveryTtlHours?: number;
+    rawToken?: string;
+  }
+): Promise<InvitationResendPreparationResult> {
+  if (!canPlanInvitations(input.session.role)) {
+    throw new InvitationLifecycleError(
+      "forbidden",
+      "Only owner or admin members can manage organization invitations."
+    );
+  }
+
+  return db.transaction(async (tx) => {
+    const [invitation] = await tx
+      .select(invitationSelection)
+      .from(invitations)
+      .where(
+        and(
+          eq(invitations.id, input.invitationId),
+          eq(invitations.organizationId, input.session.organizationId)
+        )
+      )
+      .limit(1);
+
+    if (!invitation) {
+      throw new InvitationLifecycleError(
+        "not_found",
+        "Invitation was not found."
+      );
+    }
+
+    const deliveryPlan = createInvitationDeliveryPlan({
+      target: toDeliveryTarget(invitation),
+      options: {
+        now: input.now,
+        deliveryTtlHours: input.deliveryTtlHours,
+        rawToken: input.rawToken
+      }
+    });
+    const auditEvent = createInvitationResendAuditEvent({
+      session: input.session,
+      delivery: deliveryPlan.publicPlan
+    });
+
+    await tx.insert(auditEvents).values(auditEvent);
+
+    return {
+      invitation,
+      delivery: deliveryPlan.publicPlan,
       auditEvent
     };
   });

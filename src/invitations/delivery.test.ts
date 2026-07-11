@@ -4,6 +4,7 @@ import { InvitationLifecycleError } from "./lifecycle";
 import {
   createInvitationAcceptancePayloadFromDeliveryPlan,
   createInvitationDeliveryPlan,
+  parseInvitationResendPayload,
   type InvitationDeliveryTarget
 } from "./delivery";
 import { hashInvitationToken } from "./tokens";
@@ -30,6 +31,35 @@ function expectInvitationError(action: () => unknown, code: string) {
 
   throw new Error("Expected invitation lifecycle error.");
 }
+
+describe("parseInvitationResendPayload", () => {
+  it("accepts a trimmed invitation id and optional delivery TTL", () => {
+    expect(
+      parseInvitationResendPayload({
+        invitationId: " invitation_1 ",
+        deliveryTtlHours: 12
+      })
+    ).toEqual({
+      invitationId: "invitation_1",
+      deliveryTtlHours: 12
+    });
+  });
+
+  it("rejects missing invitation ids and unsafe TTL values", () => {
+    expectInvitationError(
+      () => parseInvitationResendPayload({}),
+      "invalid_payload"
+    );
+    expectInvitationError(
+      () =>
+        parseInvitationResendPayload({
+          invitationId: target.id,
+          deliveryTtlHours: 0
+        }),
+      "invalid_payload"
+    );
+  });
+});
 
 describe("createInvitationDeliveryPlan", () => {
   it("creates a token-safe public delivery plan with secret material split out", () => {
