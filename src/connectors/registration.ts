@@ -1,31 +1,30 @@
 import { randomUUID } from "node:crypto";
 
 import type { AuthSession } from "@/auth/session";
+import {
+  externalConnectorCapabilities,
+  externalConnectorScopeKinds,
+  externalConnectorSyncStrategies,
+  externalConnectorTypes,
+  type ExternalConnectorCapability,
+  type ExternalConnectorScopeKind,
+  type ExternalConnectorSyncStrategy,
+  type ExternalConnectorType
+} from "@/db/model";
 import type { auditEvents } from "@/db/schema";
 
-export const externalConnectorTypes = [
-  "github",
-  "slack",
-  "google_drive",
-  "notion"
-] as const;
-export type ExternalConnectorType = (typeof externalConnectorTypes)[number];
-
-export const externalConnectorCapabilities = [
-  "metadata_read",
-  "content_read",
-  "incremental_sync",
-  "permission_sync"
-] as const;
-export type ExternalConnectorCapability =
-  (typeof externalConnectorCapabilities)[number];
-
-export type ExternalConnectorScopeKind =
-  | "repository"
-  | "channel"
-  | "folder"
-  | "page";
-export type ExternalConnectorSyncStrategy = "full" | "incremental";
+export {
+  externalConnectorCapabilities,
+  externalConnectorScopeKinds,
+  externalConnectorSyncStrategies,
+  externalConnectorTypes
+};
+export type {
+  ExternalConnectorCapability,
+  ExternalConnectorScopeKind,
+  ExternalConnectorSyncStrategy,
+  ExternalConnectorType
+};
 
 export interface ExternalConnectorRegistrationPayload {
   organizationId?: string;

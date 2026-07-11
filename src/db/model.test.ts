@@ -5,6 +5,11 @@ import {
   canRoleManagePermissionGrants,
   databaseTableNames,
   embeddingDimensions,
+  externalConnectorCapabilities,
+  externalConnectorScopeKinds,
+  externalConnectorStatuses,
+  externalConnectorSyncStrategies,
+  externalConnectorTypes,
   invitationDeliveryAttemptStatuses,
   invitationProviderEvidenceTypes,
   invitationStatuses,
@@ -28,6 +33,7 @@ describe("database model constants", () => {
       "invitations",
       "invitation_delivery_attempts",
       "invitation_delivery_evidence",
+      "external_connectors",
       "sources",
       "documents",
       "chunks",
@@ -39,6 +45,24 @@ describe("database model constants", () => {
       "audit_events",
       "kpi_telemetry_events"
     ]);
+  });
+
+  it("defines credential-safe external connector taxonomy", () => {
+    expect(externalConnectorTypes).toEqual([
+      "github",
+      "slack",
+      "google_drive",
+      "notion"
+    ]);
+    expect(externalConnectorScopeKinds).toEqual([
+      "repository",
+      "channel",
+      "folder",
+      "page"
+    ]);
+    expect(externalConnectorCapabilities).toContain("permission_sync");
+    expect(externalConnectorSyncStrategies).toEqual(["full", "incremental"]);
+    expect(externalConnectorStatuses).toEqual(["configured", "disabled"]);
   });
 
   it("defines permission primitives for retrieval boundaries", () => {

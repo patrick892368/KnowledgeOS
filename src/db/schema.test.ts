@@ -4,6 +4,11 @@ import { databaseTableNames, embeddingDimensions } from "./model";
 import {
   documentStatusEnum,
   embeddings,
+  externalConnectors,
+  externalConnectorScopeKindEnum,
+  externalConnectorStatusEnum,
+  externalConnectorSyncStrategyEnum,
+  externalConnectorTypeEnum,
   invitationDeliveryEvidence,
   invitationDeliveryAttempts,
   invitationDeliveryAttemptStatusEnum,
@@ -57,6 +62,26 @@ describe("database schema", () => {
       "suppressed",
       "complained"
     ]);
+    expect(externalConnectorTypeEnum.enumValues).toEqual([
+      "github",
+      "slack",
+      "google_drive",
+      "notion"
+    ]);
+    expect(externalConnectorScopeKindEnum.enumValues).toEqual([
+      "repository",
+      "channel",
+      "folder",
+      "page"
+    ]);
+    expect(externalConnectorSyncStrategyEnum.enumValues).toEqual([
+      "full",
+      "incremental"
+    ]);
+    expect(externalConnectorStatusEnum.enumValues).toEqual([
+      "configured",
+      "disabled"
+    ]);
     expect(sourceTypeEnum.enumValues).toContain("repository");
     expect(sourceStatusEnum.enumValues).toContain("indexing");
     expect(documentStatusEnum.enumValues).toContain("indexed");
@@ -101,5 +126,17 @@ describe("database schema", () => {
     expect(invitationDeliveryEvidence).not.toHaveProperty("signingSecret");
     expect(invitationDeliveryEvidence).not.toHaveProperty("rawError");
     expect(invitationDeliveryEvidence).not.toHaveProperty("updatedAt");
+  });
+
+  it("keeps external connector configuration reference-only", () => {
+    expect(externalConnectors).toHaveProperty("credentialReference");
+    expect(externalConnectors).toHaveProperty("cursorReference");
+    expect(externalConnectors).not.toHaveProperty("credential");
+    expect(externalConnectors).not.toHaveProperty("accessToken");
+    expect(externalConnectors).not.toHaveProperty("refreshToken");
+    expect(externalConnectors).not.toHaveProperty("apiKey");
+    expect(externalConnectors).not.toHaveProperty("secret");
+    expect(externalConnectors).not.toHaveProperty("providerPayload");
+    expect(externalConnectors).not.toHaveProperty("sourceContent");
   });
 });

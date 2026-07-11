@@ -1,5 +1,6 @@
 import { relations, sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   doublePrecision,
   index,
@@ -18,6 +19,11 @@ import {
   databaseTableNames,
   documentStatuses,
   embeddingDimensions,
+  externalConnectorScopeKinds,
+  externalConnectorStatuses,
+  externalConnectorSyncStrategies,
+  externalConnectorTypes,
+  type ExternalConnectorCapability,
   invitationDeliveryAttemptStatuses,
   invitationProviderEvidenceTypes,
   invitationStatuses,
@@ -62,6 +68,22 @@ export const invitationDeliveryAttemptStatusEnum = knowledgeos.enum(
 export const invitationProviderEvidenceTypeEnum = knowledgeos.enum(
   "invitation_provider_evidence_type",
   invitationProviderEvidenceTypes
+);
+export const externalConnectorTypeEnum = knowledgeos.enum(
+  "external_connector_type",
+  externalConnectorTypes
+);
+export const externalConnectorScopeKindEnum = knowledgeos.enum(
+  "external_connector_scope_kind",
+  externalConnectorScopeKinds
+);
+export const externalConnectorSyncStrategyEnum = knowledgeos.enum(
+  "external_connector_sync_strategy",
+  externalConnectorSyncStrategies
+);
+export const externalConnectorStatusEnum = knowledgeos.enum(
+  "external_connector_status",
+  externalConnectorStatuses
 );
 export const sourceTypeEnum = knowledgeos.enum("source_type", sourceTypes);
 export const sourceStatusEnum = knowledgeos.enum(
@@ -302,6 +324,87 @@ export const invitationDeliveryEvidence = knowledgeos.table(
     check(
       "invitation_delivery_evidence_message_not_empty",
       sql`${table.providerMessageId} <> ''`
+    )
+  ]
+);
+
+export const externalConnectors = knowledgeos.table(
+  "external_connectors",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    connectorType: externalConnectorTypeEnum("connector_type").notNull(),
+    accountReference: varchar("account_reference", { length: 128 }).notNull(),
+    credentialReference: varchar("credential_reference", {
+      length: 41
+    }).notNull(),
+    scopeKind: externalConnectorScopeKindEnum("scope_kind").notNull(),
+    scopeExternalId: varchar("scope_external_id", { length: 201 }).notNull(),
+    capabilities: jsonb("capabilities")
+      .$type<ExternalConnectorCapability[]>()
+      .notNull(),
+    permissionMode: varchar("permission_mode", { length: 32 })
+      .default("source_acl")
+      .notNull(),
+    citationRequired: boolean("citation_required").default(true).notNull(),
+    displayName: varchar("display_name", { length: 80 }).notNull(),
+    syncStrategy: externalConnectorSyncStrategyEnum("sync_strategy").notNull(),
+    cursorReference: varchar("cursor_reference", { length: 43 }),
+    status: externalConnectorStatusEnum("status")
+      .default("configured")
+      .notNull(),
+    createdBy: uuid("created_by").references(() => users.id, {
+      onDelete: "set null"
+    }),
+    ...timestamps
+  },
+  (table) => [
+    uniqueIndex("external_connectors_scope_uidx").on(
+      table.organizationId,
+      table.connectorType,
+      table.accountReference,
+      table.scopeKind,
+      table.scopeExternalId
+    ),
+    index("external_connectors_org_status_created_idx").on(
+      table.organizationId,
+      table.status,
+      table.createdAt
+    ),
+    check(
+      "external_connectors_references_not_empty",
+      sql`${table.accountReference} <> '' and ${table.scopeExternalId} <> '' and ${table.displayName} <> ''`
+    ),
+    check(
+      "external_connectors_credential_reference_format",
+      sql`${table.credentialReference} ~* '^cred_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`
+    ),
+    check(
+      "external_connectors_cursor_reference_format",
+      sql`${table.cursorReference} is null or ${table.cursorReference} ~* '^cursor_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`
+    ),
+    check(
+      "external_connectors_scope_matches_type",
+      sql`(
+        (${table.connectorType} = 'github' and ${table.scopeKind} = 'repository')
+        or (${table.connectorType} = 'slack' and ${table.scopeKind} = 'channel')
+        or (${table.connectorType} = 'google_drive' and ${table.scopeKind} = 'folder')
+        or (${table.connectorType} = 'notion' and ${table.scopeKind} = 'page')
+      )`
+    ),
+    check(
+      "external_connectors_required_capabilities",
+      sql`jsonb_typeof(${table.capabilities}) = 'array' and ${table.capabilities} @> '["content_read","permission_sync"]'::jsonb`
+    ),
+    check(
+      "external_connectors_permission_and_citation",
+      sql`${table.permissionMode} = 'source_acl' and ${table.citationRequired} = true`
+    ),
+    check(
+      "external_connectors_cursor_requires_incremental",
+      sql`${table.cursorReference} is null or ${table.syncStrategy} = 'incremental'`
     )
   ]
 );
@@ -592,6 +695,7 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
   invitations: many(invitations),
   invitationDeliveryAttempts: many(invitationDeliveryAttempts),
   invitationDeliveryEvidence: many(invitationDeliveryEvidence),
+  externalConnectors: many(externalConnectors),
   sources: many(sources),
   documents: many(documents),
   workflows: many(workflows),
@@ -604,6 +708,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   memberships: many(memberships),
   invitations: many(invitations),
   invitationDeliveryAttempts: many(invitationDeliveryAttempts),
+  externalConnectors: many(externalConnectors),
   createdSources: many(sources),
   workflowRuns: many(workflowRuns),
   auditEvents: many(auditEvents)
@@ -666,6 +771,20 @@ export const invitationDeliveryEvidenceRelations = relations(
     deliveryAttempt: one(invitationDeliveryAttempts, {
       fields: [invitationDeliveryEvidence.deliveryAttemptId],
       references: [invitationDeliveryAttempts.id]
+    })
+  })
+);
+
+export const externalConnectorsRelations = relations(
+  externalConnectors,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [externalConnectors.organizationId],
+      references: [organizations.id]
+    }),
+    creator: one(users, {
+      fields: [externalConnectors.createdBy],
+      references: [users.id]
     })
   })
 );
@@ -785,6 +904,7 @@ export const schemaTables = {
   invitations,
   invitation_delivery_attempts: invitationDeliveryAttempts,
   invitation_delivery_evidence: invitationDeliveryEvidence,
+  external_connectors: externalConnectors,
   sources,
   documents,
   chunks,
@@ -805,6 +925,7 @@ export type InvitationDeliveryAttempt =
   typeof invitationDeliveryAttempts.$inferSelect;
 export type InvitationDeliveryEvidence =
   typeof invitationDeliveryEvidence.$inferSelect;
+export type ExternalConnector = typeof externalConnectors.$inferSelect;
 export type Source = typeof sources.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type Chunk = typeof chunks.$inferSelect;

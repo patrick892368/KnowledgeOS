@@ -4908,9 +4908,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-087 External connector registration contract</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-088 External connector persistence API</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-088 External connector persistence API</span>
+                  <span>T-089 GitHub content retrieval contract</span>
                 </div>
               </div>
             </div>

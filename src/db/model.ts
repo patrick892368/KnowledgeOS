@@ -31,6 +31,39 @@ export const invitationProviderEvidenceTypes = [
 export type InvitationProviderEvidenceType =
   (typeof invitationProviderEvidenceTypes)[number];
 
+export const externalConnectorTypes = [
+  "github",
+  "slack",
+  "google_drive",
+  "notion"
+] as const;
+export type ExternalConnectorType = (typeof externalConnectorTypes)[number];
+
+export const externalConnectorCapabilities = [
+  "metadata_read",
+  "content_read",
+  "incremental_sync",
+  "permission_sync"
+] as const;
+export type ExternalConnectorCapability =
+  (typeof externalConnectorCapabilities)[number];
+
+export const externalConnectorScopeKinds = [
+  "repository",
+  "channel",
+  "folder",
+  "page"
+] as const;
+export type ExternalConnectorScopeKind =
+  (typeof externalConnectorScopeKinds)[number];
+
+export const externalConnectorSyncStrategies = ["full", "incremental"] as const;
+export type ExternalConnectorSyncStrategy =
+  (typeof externalConnectorSyncStrategies)[number];
+
+export const externalConnectorStatuses = ["configured", "disabled"] as const;
+export type ExternalConnectorStatus = (typeof externalConnectorStatuses)[number];
+
 export const sourceTypes = [
   "document",
   "url",
@@ -125,6 +158,7 @@ export const databaseTableNames = [
   "invitations",
   "invitation_delivery_attempts",
   "invitation_delivery_evidence",
+  "external_connectors",
   "sources",
   "documents",
   "chunks",
