@@ -4,8 +4,10 @@ import { databaseTableNames, embeddingDimensions } from "./model";
 import {
   documentStatusEnum,
   embeddings,
+  invitationDeliveryEvidence,
   invitationDeliveryAttempts,
   invitationDeliveryAttemptStatusEnum,
+  invitationProviderEvidenceTypeEnum,
   invitationStatusEnum,
   kpiTelemetryCategoryEnum,
   kpiTelemetrySourceEnum,
@@ -46,6 +48,15 @@ describe("database schema", () => {
       "accepted_by_provider",
       "provider_failed"
     ]);
+    expect(invitationProviderEvidenceTypeEnum.enumValues).toEqual([
+      "sent_by_provider",
+      "delivered_to_recipient_server",
+      "delivery_delayed",
+      "bounced",
+      "delivery_failed",
+      "suppressed",
+      "complained"
+    ]);
     expect(sourceTypeEnum.enumValues).toContain("repository");
     expect(sourceStatusEnum.enumValues).toContain("indexing");
     expect(documentStatusEnum.enumValues).toContain("indexed");
@@ -78,5 +89,17 @@ describe("database schema", () => {
     expect(invitationDeliveryAttempts).not.toHaveProperty("rawToken");
     expect(invitationDeliveryAttempts).not.toHaveProperty("tokenHash");
     expect(invitationDeliveryAttempts).not.toHaveProperty("providerPayload");
+  });
+
+  it("keeps invitation delivery evidence immutable and data-minimized", () => {
+    expect(invitationDeliveryEvidence).not.toHaveProperty("recipient");
+    expect(invitationDeliveryEvidence).not.toHaveProperty("email");
+    expect(invitationDeliveryEvidence).not.toHaveProperty("token");
+    expect(invitationDeliveryEvidence).not.toHaveProperty("tokenHash");
+    expect(invitationDeliveryEvidence).not.toHaveProperty("rawPayload");
+    expect(invitationDeliveryEvidence).not.toHaveProperty("signature");
+    expect(invitationDeliveryEvidence).not.toHaveProperty("signingSecret");
+    expect(invitationDeliveryEvidence).not.toHaveProperty("rawError");
+    expect(invitationDeliveryEvidence).not.toHaveProperty("updatedAt");
   });
 });

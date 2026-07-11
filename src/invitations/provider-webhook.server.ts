@@ -2,16 +2,9 @@ import { Buffer } from "node:buffer";
 
 import { Webhook } from "svix";
 
-import { parseInvitationEmailProviderMessageId } from "./email-provider.server";
+import type { InvitationProviderEvidenceType } from "@/db/model";
 
-export type InvitationProviderEvidenceType =
-  | "sent_by_provider"
-  | "delivered_to_recipient_server"
-  | "delivery_delayed"
-  | "bounced"
-  | "delivery_failed"
-  | "suppressed"
-  | "complained";
+import { parseInvitationEmailProviderMessageId } from "./email-provider.server";
 
 export interface VerifiedInvitationProviderEvidence {
   provider: "resend";

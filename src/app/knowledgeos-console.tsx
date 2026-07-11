@@ -4486,9 +4486,13 @@ export function KnowledgeOSConsole() {
                   <CheckCircle2 size={16} />
                   <span>T-081 Provider webhook verification</span>
                 </div>
+                <div className="task-row done">
+                  <CheckCircle2 size={16} />
+                  <span>T-082 Provider delivery evidence persistence</span>
+                </div>
                 <div className="task-row active">
                   <Activity size={16} />
-                  <span>T-082 Provider delivery evidence persistence</span>
+                  <span>T-083 Verified Provider webhook API</span>
                 </div>
               </div>
             </div>

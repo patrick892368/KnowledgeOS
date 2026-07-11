@@ -19,6 +19,18 @@ export const invitationDeliveryAttemptStatuses = [
 export type InvitationDeliveryAttemptStatus =
   (typeof invitationDeliveryAttemptStatuses)[number];
 
+export const invitationProviderEvidenceTypes = [
+  "sent_by_provider",
+  "delivered_to_recipient_server",
+  "delivery_delayed",
+  "bounced",
+  "delivery_failed",
+  "suppressed",
+  "complained"
+] as const;
+export type InvitationProviderEvidenceType =
+  (typeof invitationProviderEvidenceTypes)[number];
+
 export const sourceTypes = [
   "document",
   "url",
@@ -112,6 +124,7 @@ export const databaseTableNames = [
   "memberships",
   "invitations",
   "invitation_delivery_attempts",
+  "invitation_delivery_evidence",
   "sources",
   "documents",
   "chunks",

@@ -43,6 +43,13 @@
       "when": 1783759736753,
       "tag": "0005_overconfident_hammerhead",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783763522544,
+      "tag": "0006_illegal_felicia_hardy",
+      "breakpoints": true
     }
   ]
 }

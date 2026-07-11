@@ -6,6 +6,7 @@ import {
   databaseTableNames,
   embeddingDimensions,
   invitationDeliveryAttemptStatuses,
+  invitationProviderEvidenceTypes,
   invitationStatuses,
   isMembershipRole,
   isTerminalWorkflowRunStatus,
@@ -26,6 +27,7 @@ describe("database model constants", () => {
       "memberships",
       "invitations",
       "invitation_delivery_attempts",
+      "invitation_delivery_evidence",
       "sources",
       "documents",
       "chunks",
@@ -61,6 +63,19 @@ describe("database model constants", () => {
       "provider_failed"
     ]);
     expect(invitationDeliveryAttemptStatuses).not.toContain("delivered");
+  });
+
+  it("defines Provider delivery evidence without inbox-delivered state", () => {
+    expect(invitationProviderEvidenceTypes).toEqual([
+      "sent_by_provider",
+      "delivered_to_recipient_server",
+      "delivery_delayed",
+      "bounced",
+      "delivery_failed",
+      "suppressed",
+      "complained"
+    ]);
+    expect(invitationProviderEvidenceTypes).not.toContain("inbox_delivered");
   });
 
   it("keeps owner and admin as permission administrators", () => {
