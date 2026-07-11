@@ -69,7 +69,8 @@ const attemptSelection = {
   invitationId: invitationDeliveryAttempts.invitationId,
   provider: invitationDeliveryAttempts.provider,
   status: invitationDeliveryAttempts.status,
-  providerMessageId: invitationDeliveryAttempts.providerMessageId
+  providerMessageId: invitationDeliveryAttempts.providerMessageId,
+  preparedAt: invitationDeliveryAttempts.preparedAt
 };
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -270,7 +271,9 @@ export async function persistVerifiedInvitationDeliveryEvidence(
       (attempt.status === "accepted_by_provider" &&
         attempt.providerMessageId !== evidence.providerMessageId) ||
       (attempt.status === "prepared" && attempt.providerMessageId !== null) ||
-      attempt.status === "provider_failed"
+      attempt.status === "provider_failed" ||
+      evidence.occurredAt.getTime() <
+        attempt.preparedAt.getTime() - 300_000
     ) {
       return evidenceError(
         "invalid_state",

@@ -36,7 +36,8 @@ const acceptedAttempt = {
   invitationId,
   provider: "resend",
   status: "accepted_by_provider" as const,
-  providerMessageId
+  providerMessageId,
+  preparedAt: new Date("2026-07-11T00:00:00.000Z")
 };
 const persistedEvidence = {
   id: "88888888-8888-4888-8888-888888888888",
@@ -279,7 +280,7 @@ describe("persistVerifiedInvitationDeliveryEvidence", () => {
       providerEventId: "msg_old_event",
       providerEventType: "email.sent" as const,
       evidenceType: "sent_by_provider" as const,
-      occurredAt: new Date("2026-07-10T23:00:00.000Z")
+      occurredAt: new Date("2026-07-11T00:10:00.000Z")
     };
     const oldPersisted = {
       ...persistedEvidence,
@@ -300,6 +301,21 @@ describe("persistVerifiedInvitationDeliveryEvidence", () => {
       })
     ).resolves.toEqual({ mode: "created", evidence: oldPersisted });
     expect(acceptedAttempt.status).toBe("accepted_by_provider");
+  });
+
+  it("rejects evidence occurring outside the allowed pre-preparation clock skew", async () => {
+    const db = createDatabaseDouble({ attemptRows: [acceptedAttempt] });
+
+    await expect(
+      persistVerifiedInvitationDeliveryEvidence(db.db, {
+        evidence: {
+          ...verifiedEvidence,
+          occurredAt: new Date("2026-07-10T23:54:59.000Z")
+        },
+        receivedAt
+      })
+    ).rejects.toMatchObject({ code: "invalid_state" });
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("rejects unverified markers and mismatched event taxonomy before database work", async () => {
